@@ -1,0 +1,25 @@
+[project]
+name = "matter-hub"
+version = "0.1.0"
+description = "CLI tool to sync, search, and tag Matter articles"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1",
+    "httpx>=0.27",
+    "qrcode>=7.4",
+    "rich>=13.0",
+    "anthropic>=0.40",
+]
+
+[project.scripts]
+matter-hub = "matter_hub.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-httpx>=0.35",
+]
