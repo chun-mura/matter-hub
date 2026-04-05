@@ -1,4 +1,4 @@
-"""Auto-tagging for articles using Ollama or Claude API."""
+"""Auto-tagging for articles using Ollama."""
 
 import json
 import re
@@ -65,18 +65,3 @@ def tag_article_ollama(
     )
     resp.raise_for_status()
     return parse_tags_response(resp.json()["response"])
-
-
-def tag_article_anthropic(
-    client,
-    article: dict,
-    highlights: list[dict],
-    existing_tags: list[str],
-) -> list[str]:
-    prompt = build_prompt(article, highlights, existing_tags)
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=256,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return parse_tags_response(response.content[0].text)

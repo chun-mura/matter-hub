@@ -22,9 +22,11 @@ uv run matter-hub auth
 # 記事を同期
 uv run matter-hub sync
 
-# AI自動タグ付け付きで同期（要 ANTHROPIC_API_KEY）
-export ANTHROPIC_API_KEY=sk-ant-...
+# AI自動タグ付け付きで同期（Ollama使用、要Ollamaインストール）
 uv run matter-hub sync --tag
+
+# モデル指定
+uv run matter-hub sync --tag --model gemma3:4b
 ```
 
 ## コマンド

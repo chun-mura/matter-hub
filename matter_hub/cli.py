@@ -1,6 +1,5 @@
 """CLI entry point for Matter Hub."""
 
-import os
 import sys
 import time
 
@@ -70,10 +69,9 @@ def auth():
 
 
 @cli.command()
-@click.option("--tag", is_flag=True, help="同期後にAI自動タグ付けを実行（デフォルト: Ollama）")
-@click.option("--claude", is_flag=True, help="タグ付けにClaude APIを使用（要ANTHROPIC_API_KEY）")
+@click.option("--tag", is_flag=True, help="同期後にOllamaで自動タグ付けを実行")
 @click.option("--model", default="gemma3:4b", help="Ollamaモデル名（デフォルト: gemma3:4b）")
-def sync(tag, claude, model):
+def sync(tag, model):
     """Matter APIから記事を同期"""
     client = get_client_from_config()
 
@@ -121,27 +119,13 @@ def sync(tag, claude, model):
     console.print(f"[green]{count} 件の記事を同期しました[/green]")
 
     if tag:
-        _run_auto_tag(db, use_ollama=not claude, ollama_model=model)
+        _run_auto_tag(db, ollama_model=model)
 
     db.close()
 
 
-def _load_env():
-    """Load .env file from project root if it exists."""
-    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
-    if not os.path.exists(env_path):
-        return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            os.environ.setdefault(key.strip(), value.strip())
-
-
-def _run_auto_tag(db: Database, use_ollama: bool = True, ollama_model: str = "gemma3:4b"):
-    from matter_hub.tagger import tag_article_ollama, tag_article_anthropic
+def _run_auto_tag(db: Database, ollama_model: str = "gemma3:4b"):
+    from matter_hub.tagger import tag_article_ollama
 
     articles = db.articles_without_ai_tags()
     existing_tags = db.get_all_tag_names()
@@ -150,25 +134,12 @@ def _run_auto_tag(db: Database, use_ollama: bool = True, ollama_model: str = "ge
         console.print("[green]タグ付け対象の記事はありません[/green]")
         return
 
-    if use_ollama:
-        console.print(f"[yellow]{len(articles)} 件の記事にタグ付け中（Ollama: {ollama_model}）...[/yellow]")
-    else:
-        _load_env()
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            console.print("[red]ANTHROPIC_API_KEY が設定されていません。.env ファイルを確認してください。[/red]")
-            return
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        console.print(f"[yellow]{len(articles)} 件の記事にタグ付け中（Claude API）...[/yellow]")
+    console.print(f"[yellow]{len(articles)} 件の記事にタグ付け中（Ollama: {ollama_model}）...[/yellow]")
 
     for article in articles:
         highlights = db.get_highlights(article["id"])
         try:
-            if use_ollama:
-                tags = tag_article_ollama(article, highlights, existing_tags, model=ollama_model)
-            else:
-                tags = tag_article_anthropic(client, article, highlights, existing_tags)
+            tags = tag_article_ollama(article, highlights, existing_tags, model=ollama_model)
         except Exception as e:
             console.print(f"  [red]{article['title'][:40]}... → エラー: {e}[/red]")
             continue

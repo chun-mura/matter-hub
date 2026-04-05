@@ -1,6 +1,4 @@
-from unittest.mock import MagicMock, patch
-
-from matter_hub.tagger import build_prompt, parse_tags_response, tag_article_anthropic, tag_article_ollama
+from matter_hub.tagger import build_prompt, parse_tags_response, tag_article_ollama
 
 
 def test_build_prompt():
@@ -45,23 +43,6 @@ def test_parse_tags_response_invalid():
 
 def test_parse_tags_response_with_surrounding_text():
     assert parse_tags_response('Here are the tags: ["AI", "LLM"] done') == ["AI", "LLM"]
-
-
-def test_tag_article_anthropic():
-    mock_client = MagicMock()
-    mock_client.messages.create.return_value = MagicMock(
-        content=[MagicMock(text='["AI", "自然言語処理", "LLM"]')]
-    )
-    article = {
-        "title": "NLP Guide",
-        "url": "https://example.com",
-        "author": "Bob",
-        "publisher": "Tech",
-    }
-    tags = tag_article_anthropic(mock_client, article, [], ["AI", "Python"])
-    assert len(tags) == 3
-    assert "AI" in tags
-    mock_client.messages.create.assert_called_once()
 
 
 def test_tag_article_ollama(httpx_mock):
