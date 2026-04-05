@@ -124,8 +124,39 @@ def sync(tag, model):
     db.close()
 
 
+def _ensure_ollama():
+    """Ollamaが起動しているか確認し、停止中なら起動を提案する。"""
+    import httpx
+    import subprocess
+    try:
+        httpx.get("http://localhost:11434/api/tags", timeout=3)
+        return True
+    except (httpx.ConnectError, httpx.TimeoutException):
+        pass
+
+    console.print("[yellow]Ollamaが起動していません。[/yellow]")
+    if click.confirm("Ollamaを起動しますか？"):
+        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        console.print("[yellow]Ollama起動中...[/yellow]")
+        import time
+        for _ in range(30):
+            time.sleep(1)
+            try:
+                httpx.get("http://localhost:11434/api/tags", timeout=3)
+                console.print("[green]Ollama起動完了[/green]")
+                return True
+            except (httpx.ConnectError, httpx.TimeoutException):
+                pass
+        console.print("[red]Ollamaの起動がタイムアウトしました。手動で `ollama serve` を実行してください。[/red]")
+        return False
+    return False
+
+
 def _run_auto_tag(db: Database, ollama_model: str = "gemma3:4b"):
     from matter_hub.tagger import tag_article_ollama
+
+    if not _ensure_ollama():
+        return
 
     articles = db.articles_without_ai_tags()
     existing_tags = db.get_all_tag_names()
