@@ -1,7 +1,7 @@
 """Configuration management for Matter Hub.
 
 Stores config (tokens) in ~/.matter-hub/config.json.
-Stores database in ~/.matter-hub/matter-hub.db.
+Stores database in <project>/data/matter-hub.db.
 """
 
 import json
@@ -9,6 +9,8 @@ from pathlib import Path
 
 DEFAULT_DIR = Path.home() / ".matter-hub"
 DEFAULT_CONFIG_PATH = DEFAULT_DIR / "config.json"
+PROJECT_ROOT = Path(__file__).parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:
@@ -23,4 +25,5 @@ def save_config(data: dict, path: Path = DEFAULT_CONFIG_PATH) -> None:
 
 
 def get_db_path() -> Path:
-    return DEFAULT_DIR / "matter-hub.db"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR / "matter-hub.db"

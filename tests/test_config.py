@@ -26,4 +26,4 @@ def test_save_config_creates_parent_dirs(tmp_path):
 def test_get_db_path():
     db_path = get_db_path()
     assert db_path.name == "matter-hub.db"
-    assert ".matter-hub" in str(db_path)
+    assert "data" in str(db_path)

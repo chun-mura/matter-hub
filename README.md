@@ -53,4 +53,4 @@ uv run matter-hub stats           # 興味の傾向（著者別、月別）
 ## データ保存先
 
 - 設定（認証トークン）: `~/.matter-hub/config.json`
-- データベース（SQLite）: `~/.matter-hub/matter-hub.db`
+- データベース（SQLite）: `data/matter-hub.db`（プロジェクト内、gitignore対象）
