@@ -124,7 +124,22 @@ def sync(tag):
     db.close()
 
 
+def _load_env():
+    """Load .env file from project root if it exists."""
+    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip())
+
+
 def _run_auto_tag(db: Database):
+    _load_env()
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         console.print("[red]ANTHROPIC_API_KEY が設定されていません。.env ファイルを確認してください。[/red]")
