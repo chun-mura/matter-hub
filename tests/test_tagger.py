@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from matter_hub.tagger import build_prompt, parse_tags_response, tag_article
+from matter_hub.tagger import build_prompt, parse_tags_response, tag_article_anthropic, tag_article_ollama
 
 
 def test_build_prompt():
@@ -43,7 +43,11 @@ def test_parse_tags_response_invalid():
     assert parse_tags_response("not json at all") == []
 
 
-def test_tag_article():
+def test_parse_tags_response_with_surrounding_text():
+    assert parse_tags_response('Here are the tags: ["AI", "LLM"] done') == ["AI", "LLM"]
+
+
+def test_tag_article_anthropic():
     mock_client = MagicMock()
     mock_client.messages.create.return_value = MagicMock(
         content=[MagicMock(text='["AI", "自然言語処理", "LLM"]')]
@@ -54,7 +58,23 @@ def test_tag_article():
         "author": "Bob",
         "publisher": "Tech",
     }
-    tags = tag_article(mock_client, article, [], ["AI", "Python"])
+    tags = tag_article_anthropic(mock_client, article, [], ["AI", "Python"])
     assert len(tags) == 3
     assert "AI" in tags
     mock_client.messages.create.assert_called_once()
+
+
+def test_tag_article_ollama(httpx_mock):
+    httpx_mock.add_response(
+        url="http://localhost:11434/api/generate",
+        json={"response": '["AI", "機械学習", "LLM"]'},
+    )
+    article = {
+        "title": "ML Guide",
+        "url": "https://example.com",
+        "author": "Alice",
+        "publisher": "Tech",
+    }
+    tags = tag_article_ollama(article, [], [])
+    assert len(tags) == 3
+    assert "AI" in tags

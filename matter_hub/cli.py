@@ -70,8 +70,10 @@ def auth():
 
 
 @cli.command()
-@click.option("--tag", is_flag=True, help="同期後にAI自動タグ付けを実行")
-def sync(tag):
+@click.option("--tag", is_flag=True, help="同期後にAI自動タグ付けを実行（デフォルト: Ollama）")
+@click.option("--claude", is_flag=True, help="タグ付けにClaude APIを使用（要ANTHROPIC_API_KEY）")
+@click.option("--model", default="gemma3:4b", help="Ollamaモデル名（デフォルト: gemma3:4b）")
+def sync(tag, claude, model):
     """Matter APIから記事を同期"""
     client = get_client_from_config()
 
@@ -119,7 +121,7 @@ def sync(tag):
     console.print(f"[green]{count} 件の記事を同期しました[/green]")
 
     if tag:
-        _run_auto_tag(db)
+        _run_auto_tag(db, use_ollama=not claude, ollama_model=model)
 
     db.close()
 
@@ -138,32 +140,45 @@ def _load_env():
             os.environ.setdefault(key.strip(), value.strip())
 
 
-def _run_auto_tag(db: Database):
-    _load_env()
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        console.print("[red]ANTHROPIC_API_KEY が設定されていません。.env ファイルを確認してください。[/red]")
-        return
+def _run_auto_tag(db: Database, use_ollama: bool = True, ollama_model: str = "gemma3:4b"):
+    from matter_hub.tagger import tag_article_ollama, tag_article_anthropic
 
-    import anthropic
-    from matter_hub.tagger import tag_article
-
-    client = anthropic.Anthropic(api_key=api_key)
     articles = db.articles_without_ai_tags()
     existing_tags = db.get_all_tag_names()
 
-    console.print(f"[yellow]{len(articles)} 件の記事にタグ付け中...[/yellow]")
+    if not articles:
+        console.print("[green]タグ付け対象の記事はありません[/green]")
+        return
+
+    if use_ollama:
+        console.print(f"[yellow]{len(articles)} 件の記事にタグ付け中（Ollama: {ollama_model}）...[/yellow]")
+    else:
+        _load_env()
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            console.print("[red]ANTHROPIC_API_KEY が設定されていません。.env ファイルを確認してください。[/red]")
+            return
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        console.print(f"[yellow]{len(articles)} 件の記事にタグ付け中（Claude API）...[/yellow]")
 
     for article in articles:
         highlights = db.get_highlights(article["id"])
-        tags = tag_article(client, article, highlights, existing_tags)
+        try:
+            if use_ollama:
+                tags = tag_article_ollama(article, highlights, existing_tags, model=ollama_model)
+            else:
+                tags = tag_article_anthropic(client, article, highlights, existing_tags)
+        except Exception as e:
+            console.print(f"  [red]{article['title'][:40]}... → エラー: {e}[/red]")
+            continue
         for tag_name in tags:
             db.add_tag(article["id"], tag_name, "ai")
             if tag_name not in existing_tags:
                 existing_tags.append(tag_name)
-        console.print(f"  {article['title'][:40]}... → {', '.join(tags)}")
+        console.print(f"  {article['title'][:40]}... → {', '.join(tags) or '(タグなし)'}")
 
-    console.print(f"[green]タグ付け完了[/green]")
+    console.print("[green]タグ付け完了[/green]")
 
 
 @cli.command()

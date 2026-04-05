@@ -1,9 +1,9 @@
-"""Claude API auto-tagging for articles."""
+"""Auto-tagging for articles using Ollama or Claude API."""
 
 import json
 import re
 
-import anthropic
+import httpx
 
 
 def build_prompt(article: dict, highlights: list[dict], existing_tags: list[str]) -> str:
@@ -32,6 +32,15 @@ def parse_tags_response(text: str) -> list[str]:
     cleaned = re.sub(r"```json\s*", "", text)
     cleaned = re.sub(r"```\s*", "", cleaned)
     cleaned = cleaned.strip()
+    # Try to find a JSON array in the text
+    match = re.search(r'\[.*?\]', cleaned, re.DOTALL)
+    if match:
+        try:
+            result = json.loads(match.group())
+            if isinstance(result, list) and all(isinstance(t, str) for t in result):
+                return result
+        except (json.JSONDecodeError, TypeError):
+            pass
     try:
         result = json.loads(cleaned)
         if isinstance(result, list) and all(isinstance(t, str) for t in result):
@@ -41,8 +50,25 @@ def parse_tags_response(text: str) -> list[str]:
     return []
 
 
-def tag_article(
-    client: anthropic.Anthropic,
+def tag_article_ollama(
+    article: dict,
+    highlights: list[dict],
+    existing_tags: list[str],
+    model: str = "gemma3:4b",
+    base_url: str = "http://localhost:11434",
+) -> list[str]:
+    prompt = build_prompt(article, highlights, existing_tags)
+    resp = httpx.post(
+        f"{base_url}/api/generate",
+        json={"model": model, "prompt": prompt, "stream": False},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return parse_tags_response(resp.json()["response"])
+
+
+def tag_article_anthropic(
+    client,
     article: dict,
     highlights: list[dict],
     existing_tags: list[str],
