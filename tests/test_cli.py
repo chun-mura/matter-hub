@@ -202,3 +202,51 @@ def test_stats(tmp_path):
     assert result.exit_code == 0
     assert "2" in result.output
     assert "Alice" in result.output
+
+
+def test_full_workflow(tmp_path):
+    """Integration test: sync → search → tag → stats"""
+    runner = CliRunner()
+
+    sample_entry = {
+        "id": "int1",
+        "content": {
+            "title": "LLM入門ガイド",
+            "url": "https://example.com/llm",
+            "author": {"any_name": "太郎"},
+            "publisher": {"any_name": "AI Weekly"},
+            "publication_date": "2025-03-01",
+            "tags": [{"name": "AI", "created_date": "2025-03-01"}],
+            "my_annotations": [],
+            "my_note": {"note": "great intro"},
+            "library": {"library_state": 1},
+        },
+        "annotations": [],
+    }
+
+    mock_client = MagicMock()
+    mock_client.fetch_all_articles.return_value = [sample_entry]
+    db_path = tmp_path / "test.db"
+
+    with patch("matter_hub.cli.get_client_from_config", return_value=mock_client), \
+         patch("matter_hub.cli.get_db_path", return_value=db_path):
+        # Sync
+        result = runner.invoke(cli, ["sync"])
+        assert result.exit_code == 0
+
+        # Search
+        result = runner.invoke(cli, ["search", "LLM*"])
+        assert "LLM入門ガイド" in result.output
+
+        # Tag add
+        result = runner.invoke(cli, ["tag", "add", "int1", "機械学習"])
+        assert result.exit_code == 0
+
+        # Tags list
+        result = runner.invoke(cli, ["tags"])
+        assert "AI" in result.output
+        assert "機械学習" in result.output
+
+        # Stats
+        result = runner.invoke(cli, ["stats"])
+        assert "太郎" in result.output
