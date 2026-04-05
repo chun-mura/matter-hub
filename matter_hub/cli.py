@@ -67,3 +67,85 @@ def auth():
 
     console.print("[red]タイムアウト: 10分以内にスキャンされませんでした。[/red]")
     sys.exit(1)
+
+
+@cli.command()
+@click.option("--tag", is_flag=True, help="同期後にAI自動タグ付けを実行")
+def sync(tag):
+    """Matter APIから記事を同期"""
+    client = get_client_from_config()
+
+    try:
+        entries = client.fetch_all_articles()
+    except Exception as e:
+        config = load_config()
+        if config.get("refresh_token"):
+            try:
+                client.refresh_token = config["refresh_token"]
+                new_tokens = client.refresh_access_token()
+                save_config({
+                    "access_token": new_tokens["access_token"],
+                    "refresh_token": new_tokens["refresh_token"],
+                })
+                entries = client.fetch_all_articles()
+            except Exception:
+                console.print("[red]トークンの更新に失敗しました。`matter-hub auth` で再認証してください。[/red]")
+                sys.exit(1)
+        else:
+            raise
+
+    db = get_db()
+    count = 0
+
+    for entry in entries:
+        parsed = parse_feed_entry(entry)
+        article = parsed["article"]
+
+        if article.get("library_state") == 3:
+            continue
+
+        db.upsert_article(article)
+
+        db.clear_matter_tags(article["id"])
+        for t in parsed["tags"]:
+            db.add_tag(article["id"], t["name"], "matter")
+
+        db.clear_highlights(article["id"])
+        for h in parsed["highlights"]:
+            db.add_highlight(article["id"], h["text"], h.get("note"), h.get("created_date"))
+
+        count += 1
+
+    console.print(f"[green]{count} 件の記事を同期しました[/green]")
+
+    if tag:
+        _run_auto_tag(db)
+
+    db.close()
+
+
+def _run_auto_tag(db: Database):
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        console.print("[red]ANTHROPIC_API_KEY が設定されていません。.env ファイルを確認してください。[/red]")
+        return
+
+    import anthropic
+    from matter_hub.tagger import tag_article
+
+    client = anthropic.Anthropic(api_key=api_key)
+    articles = db.articles_without_ai_tags()
+    existing_tags = db.get_all_tag_names()
+
+    console.print(f"[yellow]{len(articles)} 件の記事にタグ付け中...[/yellow]")
+
+    for article in articles:
+        highlights = db.get_highlights(article["id"])
+        tags = tag_article(client, article, highlights, existing_tags)
+        for tag_name in tags:
+            db.add_tag(article["id"], tag_name, "ai")
+            if tag_name not in existing_tags:
+                existing_tags.append(tag_name)
+        console.print(f"  {article['title'][:40]}... → {', '.join(tags)}")
+
+    console.print(f"[green]タグ付け完了[/green]")
