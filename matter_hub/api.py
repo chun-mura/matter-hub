@@ -71,6 +71,8 @@ class MatterClient:
             return None
         resp.raise_for_status()
         data = resp.json()
+        if not data.get("access_token"):
+            return None
         self.access_token = data["access_token"]
         self.refresh_token = data["refresh_token"]
         return data
