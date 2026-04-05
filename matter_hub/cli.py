@@ -149,3 +149,149 @@ def _run_auto_tag(db: Database):
         console.print(f"  {article['title'][:40]}... → {', '.join(tags)}")
 
     console.print(f"[green]タグ付け完了[/green]")
+
+
+@cli.command()
+@click.argument("query", default="")
+@click.option("--tag", "tag_filter", default=None, help="タグで絞り込み")
+@click.option("--author", default=None, help="著者で絞り込み")
+@click.option("--after", default=None, help="指定日以降の記事 (YYYY-MM-DD)")
+@click.option("--json", "as_json", is_flag=True, help="JSON形式で出力")
+def search(query, tag_filter, author, after, as_json):
+    """記事を検索"""
+    db = get_db()
+
+    if tag_filter:
+        articles = db.search_by_tag(tag_filter)
+    elif query:
+        articles = db.search(query)
+    else:
+        articles = db.list_articles()
+
+    if author:
+        articles = [a for a in articles if a.get("author") and author.lower() in a["author"].lower()]
+    if after:
+        articles = [a for a in articles if a.get("published_date") and a["published_date"] >= after]
+
+    if as_json:
+        import json
+        click.echo(json.dumps(articles, ensure_ascii=False, indent=2))
+    else:
+        _print_articles_table(articles)
+
+    db.close()
+
+
+@cli.command(name="list")
+@click.option("--all", "show_all", is_flag=True, help="全件表示")
+@click.option("--json", "as_json", is_flag=True, help="JSON形式で出力")
+def list_cmd(show_all, as_json):
+    """記事一覧を表示"""
+    db = get_db()
+    limit = None if show_all else 20
+    articles = db.list_articles(limit=limit)
+
+    if as_json:
+        import json
+        click.echo(json.dumps(articles, ensure_ascii=False, indent=2))
+    else:
+        _print_articles_table(articles)
+
+    db.close()
+
+
+@cli.command()
+def tags():
+    """タグ一覧を表示（記事数付き）"""
+    db = get_db()
+    tag_list = db.list_tags()
+
+    table = Table(title="タグ一覧")
+    table.add_column("タグ", style="cyan")
+    table.add_column("記事数", justify="right", style="green")
+
+    for name, count in tag_list:
+        table.add_row(name, str(count))
+
+    console.print(table)
+    db.close()
+
+
+@cli.group()
+def tag():
+    """タグの追加・削除"""
+    pass
+
+
+@tag.command(name="add")
+@click.argument("article_id")
+@click.argument("tag_name")
+def tag_add(article_id, tag_name):
+    """記事にタグを追加"""
+    db = get_db()
+    db.add_tag(article_id, tag_name, "manual")
+    console.print(f"[green]タグ '{tag_name}' を追加しました[/green]")
+    db.close()
+
+
+@tag.command(name="remove")
+@click.argument("article_id")
+@click.argument("tag_name")
+def tag_remove(article_id, tag_name):
+    """記事からタグを削除"""
+    db = get_db()
+    db.remove_tag(article_id, tag_name)
+    console.print(f"[yellow]タグ '{tag_name}' を削除しました[/yellow]")
+    db.close()
+
+
+@cli.command()
+def stats():
+    """興味の傾向を分析"""
+    db = get_db()
+    s = db.get_stats()
+
+    console.print(f"\n[bold]記事数:[/bold] {s['total_articles']}")
+    console.print(f"[bold]タグ数:[/bold] {s['total_tags']}")
+
+    if s["top_authors"]:
+        console.print("\n[bold]著者別（上位10件）:[/bold]")
+        table = Table()
+        table.add_column("著者", style="cyan")
+        table.add_column("記事数", justify="right", style="green")
+        for author, count in s["top_authors"]:
+            table.add_row(author, str(count))
+        console.print(table)
+
+    if s["monthly"]:
+        console.print("\n[bold]月別保存数:[/bold]")
+        table = Table()
+        table.add_column("月", style="cyan")
+        table.add_column("記事数", justify="right", style="green")
+        for month, count in s["monthly"]:
+            table.add_row(month, str(count))
+        console.print(table)
+
+    db.close()
+
+
+def _print_articles_table(articles: list[dict]):
+    if not articles:
+        console.print("[yellow]記事が見つかりませんでした[/yellow]")
+        return
+
+    table = Table()
+    table.add_column("ID", style="dim", max_width=8)
+    table.add_column("タイトル", style="cyan", max_width=50)
+    table.add_column("著者", style="green", max_width=20)
+    table.add_column("日付", style="yellow", max_width=12)
+
+    for a in articles:
+        table.add_row(
+            a["id"][:8],
+            a["title"][:50],
+            a.get("author") or "-",
+            a.get("published_date") or "-",
+        )
+
+    console.print(table)

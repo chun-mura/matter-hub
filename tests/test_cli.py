@@ -98,3 +98,107 @@ def test_sync_skips_deleted_articles(tmp_path):
     articles = db.list_articles()
     assert len(articles) == 0
     db.close()
+
+
+def _seed_db(db_path):
+    """Helper to create a seeded DB for CLI tests."""
+    db = Database(db_path)
+    db.upsert_article({
+        "id": "a1", "title": "Machine Learning入門", "url": "https://ml.example.com",
+        "author": "Alice", "publisher": "TechBlog",
+        "published_date": "2025-01-15", "note": "good article", "library_state": 1,
+    })
+    db.upsert_article({
+        "id": "a2", "title": "料理レシピ集", "url": "https://cook.example.com",
+        "author": "Bob", "publisher": "FoodBlog",
+        "published_date": "2025-02-10", "note": None, "library_state": 1,
+    })
+    db.add_tag("a1", "AI", "ai")
+    db.add_tag("a1", "機械学習", "ai")
+    db.add_tag("a2", "料理", "ai")
+    db.add_highlight("a1", "transformers are powerful", "note1", "2025-01-16")
+    db.close()
+    return db_path
+
+
+def test_search_keyword(tmp_path):
+    runner = CliRunner()
+    db_path = _seed_db(tmp_path / "test.db")
+    with patch("matter_hub.cli.get_db_path", return_value=db_path):
+        result = runner.invoke(cli, ["search", "Machine"])
+    assert result.exit_code == 0
+    assert "Machine Learning入門" in result.output
+    assert "料理レシピ集" not in result.output
+
+
+def test_search_by_tag_flag(tmp_path):
+    runner = CliRunner()
+    db_path = _seed_db(tmp_path / "test.db")
+    with patch("matter_hub.cli.get_db_path", return_value=db_path):
+        result = runner.invoke(cli, ["search", "--tag", "AI"])
+    assert result.exit_code == 0
+    assert "Machine Learning入門" in result.output
+
+
+def test_list_default(tmp_path):
+    runner = CliRunner()
+    db_path = _seed_db(tmp_path / "test.db")
+    with patch("matter_hub.cli.get_db_path", return_value=db_path):
+        result = runner.invoke(cli, ["list"])
+    assert result.exit_code == 0
+    assert "Machine Learning入門" in result.output
+    assert "料理レシピ集" in result.output
+
+
+def test_list_json_output(tmp_path):
+    import json as json_mod
+    runner = CliRunner()
+    db_path = _seed_db(tmp_path / "test.db")
+    with patch("matter_hub.cli.get_db_path", return_value=db_path):
+        result = runner.invoke(cli, ["list", "--json"])
+    assert result.exit_code == 0
+    data = json_mod.loads(result.output)
+    assert len(data) == 2
+
+
+def test_tags_list(tmp_path):
+    runner = CliRunner()
+    db_path = _seed_db(tmp_path / "test.db")
+    with patch("matter_hub.cli.get_db_path", return_value=db_path):
+        result = runner.invoke(cli, ["tags"])
+    assert result.exit_code == 0
+    assert "AI" in result.output
+
+
+def test_tag_add(tmp_path):
+    runner = CliRunner()
+    db_path = _seed_db(tmp_path / "test.db")
+    with patch("matter_hub.cli.get_db_path", return_value=db_path):
+        result = runner.invoke(cli, ["tag", "add", "a2", "健康"])
+    assert result.exit_code == 0
+    db = Database(db_path)
+    tags = db.get_tags("a2")
+    assert any(t["name"] == "健康" for t in tags)
+    db.close()
+
+
+def test_tag_remove(tmp_path):
+    runner = CliRunner()
+    db_path = _seed_db(tmp_path / "test.db")
+    with patch("matter_hub.cli.get_db_path", return_value=db_path):
+        result = runner.invoke(cli, ["tag", "remove", "a1", "AI"])
+    assert result.exit_code == 0
+    db = Database(db_path)
+    tags = db.get_tags("a1")
+    assert not any(t["name"] == "AI" for t in tags)
+    db.close()
+
+
+def test_stats(tmp_path):
+    runner = CliRunner()
+    db_path = _seed_db(tmp_path / "test.db")
+    with patch("matter_hub.cli.get_db_path", return_value=db_path):
+        result = runner.invoke(cli, ["stats"])
+    assert result.exit_code == 0
+    assert "2" in result.output
+    assert "Alice" in result.output
