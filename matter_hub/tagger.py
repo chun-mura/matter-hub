@@ -61,7 +61,7 @@ def tag_article_ollama(
     resp = httpx.post(
         f"{base_url}/api/generate",
         json={"model": model, "prompt": prompt, "stream": False},
-        timeout=60,
+        timeout=120,
     )
     resp.raise_for_status()
     return parse_tags_response(resp.json()["response"])

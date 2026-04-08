@@ -128,6 +128,7 @@ def _ensure_ollama():
     """Ollamaが起動しているか確認し、停止中なら起動を提案する。"""
     import httpx
     import subprocess
+    import platform
     try:
         httpx.get("http://localhost:11434/api/tags", timeout=3)
         return True
@@ -136,10 +137,13 @@ def _ensure_ollama():
 
     console.print("[yellow]Ollamaが起動していません。[/yellow]")
     if click.confirm("Ollamaを起動しますか？"):
-        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if platform.system() == "Darwin":
+            subprocess.Popen(["open", "-a", "Ollama"])
+        else:
+            subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         console.print("[yellow]Ollama起動中...[/yellow]")
         import time
-        for _ in range(30):
+        for _ in range(60):
             time.sleep(1)
             try:
                 httpx.get("http://localhost:11434/api/tags", timeout=3)
@@ -147,7 +151,7 @@ def _ensure_ollama():
                 return True
             except (httpx.ConnectError, httpx.TimeoutException):
                 pass
-        console.print("[red]Ollamaの起動がタイムアウトしました。手動で `ollama serve` を実行してください。[/red]")
+        console.print("[red]Ollamaの起動がタイムアウトしました。手動でOllamaアプリを起動してください。[/red]")
         return False
     return False
 
@@ -305,6 +309,67 @@ def stats():
         console.print(table)
 
     db.close()
+
+
+@cli.command(name="help")
+@click.argument("command_name", default=None, required=False)
+@click.pass_context
+def help_cmd(ctx, command_name):
+    """コマンドの使い方を表示"""
+    if command_name:
+        # 特定コマンドのヘルプ
+        cmd = cli.get_command(ctx, command_name)
+        if cmd is None:
+            console.print(f"[red]不明なコマンド: {command_name}[/red]")
+            console.print("利用可能なコマンドは [bold]matter-hub help[/bold] で確認できます。")
+            sys.exit(1)
+        console.print(f"\n[bold cyan]matter-hub {command_name}[/bold cyan] — {cmd.get_short_help_str()}\n")
+        # サブコマンドがあるグループの場合
+        if isinstance(cmd, click.Group):
+            for sub_name, sub_cmd in cmd.commands.items():
+                console.print(f"  [green]matter-hub {command_name} {sub_name}[/green]  {sub_cmd.get_short_help_str()}")
+            console.print()
+        # パラメータ表示
+        params = [p for p in cmd.params if not isinstance(p, click.core.Context)]
+        if params:
+            param_table = Table(show_header=False, box=None, padding=(0, 2))
+            param_table.add_column(style="yellow")
+            param_table.add_column(style="dim")
+            for p in params:
+                if isinstance(p, click.Argument):
+                    param_table.add_row(f"<{p.name}>", p.type.name)
+                else:
+                    names = " / ".join(p.opts)
+                    param_table.add_row(names, p.help or "")
+            console.print(param_table)
+            console.print()
+        return
+
+    # 全体ヘルプ
+    from matter_hub import __version__
+
+    console.print(f"\n[bold]Matter Hub[/bold] v{__version__} — Matter記事の検索・タグ管理CLI\n")
+
+    commands = [
+        ("auth",       "QRコード認証でMatterにログイン"),
+        ("sync",       "Matter APIから記事を同期（--tag で自動タグ付け）"),
+        ("list",       "記事一覧を表示"),
+        ("search",     "キーワード・タグ・著者・日付で記事を検索"),
+        ("tags",       "タグ一覧を表示（記事数付き）"),
+        ("tag add",    "記事にタグを手動追加"),
+        ("tag remove", "記事からタグを削除"),
+        ("stats",      "興味の傾向を分析"),
+        ("help",       "このヘルプを表示"),
+    ]
+
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column(style="cyan", min_width=18)
+    table.add_column(style="white")
+    for name, desc in commands:
+        table.add_row(f"matter-hub {name}", desc)
+    console.print(table)
+
+    console.print("\n[dim]各コマンドの詳細: matter-hub help <command>[/dim]\n")
 
 
 def _print_articles_table(articles: list[dict]):
