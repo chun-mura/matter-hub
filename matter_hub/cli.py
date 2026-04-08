@@ -429,9 +429,9 @@ def help_cmd(ctx, command_name):
 
     commands = [
         ("auth",       "QRコード認証でMatterにログイン"),
-        ("sync",       "Matter APIから記事を同期（--tag で自動タグ付け）"),
+        ("sync",       "Matter APIから記事を同期（--tag/--embed）"),
         ("list",       "記事一覧を表示"),
-        ("search",     "キーワード・タグ・著者・日付で記事を検索"),
+        ("search",     "キーワード・タグ・著者・日付で記事を検索（--semantic対応）"),
         ("tags",       "タグ一覧を表示（記事数付き）"),
         ("tag add",    "記事にタグを手動追加"),
         ("tag remove", "記事からタグを削除"),
