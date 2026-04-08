@@ -1,4 +1,4 @@
-from matter_hub.tagger import build_prompt, parse_tags_response, tag_article_ollama
+from matter_hub.ollama import build_prompt, parse_tags_response, tag_article_ollama
 
 
 def test_build_prompt():

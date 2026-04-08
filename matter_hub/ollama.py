@@ -1,4 +1,4 @@
-"""Auto-tagging for articles using Ollama."""
+"""Ollama integration for auto-tagging and embedding generation."""
 
 import json
 import re

@@ -157,7 +157,7 @@ def _ensure_ollama():
 
 
 def _run_auto_tag(db: Database, ollama_model: str = "gemma3:4b"):
-    from matter_hub.tagger import tag_article_ollama
+    from matter_hub.ollama import tag_article_ollama
 
     if not _ensure_ollama():
         return
