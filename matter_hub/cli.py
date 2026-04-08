@@ -97,12 +97,15 @@ def sync(tag, embed, model):
 
     db = get_db()
     count = 0
+    deleted = 0
 
     for entry in entries:
         parsed = parse_feed_entry(entry)
         article = parsed["article"]
 
         if article.get("library_state") == 3:
+            if db.delete_article(article["id"]):
+                deleted += 1
             continue
 
         db.upsert_article(article)
@@ -118,6 +121,8 @@ def sync(tag, embed, model):
         count += 1
 
     console.print(f"[green]{count} 件の記事を同期しました[/green]")
+    if deleted:
+        console.print(f"[yellow]{deleted} 件の削除済み記事を除去しました[/yellow]")
 
     if tag:
         _run_auto_tag(db, ollama_model=model)

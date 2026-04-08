@@ -217,6 +217,18 @@ class Database:
             "monthly": [(r["month"], r["c"]) for r in monthly],
         }
 
+    def delete_article(self, article_id: str) -> bool:
+        """記事と関連データ（タグ、ハイライト、embedding）を削除。削除した場合Trueを返す。"""
+        row = self.conn.execute("SELECT id FROM articles WHERE id = ?", (article_id,)).fetchone()
+        if not row:
+            return False
+        self.conn.execute("DELETE FROM tags WHERE article_id = ?", (article_id,))
+        self.conn.execute("DELETE FROM highlights WHERE article_id = ?", (article_id,))
+        self.conn.execute("DELETE FROM embeddings WHERE article_id = ?", (article_id,))
+        self.conn.execute("DELETE FROM articles WHERE id = ?", (article_id,))
+        self.conn.commit()
+        return True
+
     def clear_highlights(self, article_id: str) -> None:
         self.conn.execute("DELETE FROM highlights WHERE article_id = ?", (article_id,))
         self.conn.commit()
