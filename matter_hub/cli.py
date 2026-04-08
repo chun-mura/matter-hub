@@ -324,7 +324,7 @@ def search(query, tag_filter, author, after, semantic, as_json):
         import json
         click.echo(json.dumps(articles, ensure_ascii=False, indent=2))
     else:
-        _print_articles_table(articles)
+        _print_articles(articles)
 
     db.close()
 
@@ -342,7 +342,7 @@ def list_cmd(show_all, as_json):
         import json
         click.echo(json.dumps(articles, ensure_ascii=False, indent=2))
     else:
-        _print_articles_table(articles)
+        _print_articles(articles)
 
     db.close()
 
@@ -483,36 +483,17 @@ def help_cmd(ctx, command_name):
     console.print("\n[dim]各コマンドの詳細: matter-hub help <command>[/dim]\n")
 
 
-def _print_articles_table(articles: list[dict]):
+def _print_articles(articles: list[dict]):
     if not articles:
         console.print("[yellow]記事が見つかりませんでした[/yellow]")
         return
 
-    has_score = any("_score" in a for a in articles)
-
-    table = Table()
-    if has_score:
-        table.add_column("類似度", style="magenta", justify="right", max_width=6)
-    table.add_column("ID", style="dim", max_width=8)
-    table.add_column("タイトル", style="cyan", max_width=50)
-    table.add_column("著者", style="green", max_width=20)
-    table.add_column("日付", style="yellow", max_width=12)
-
     for a in articles:
-        row = []
-        if has_score:
-            row.append(f"{a.get('_score', 0):.2f}")
-        row.extend([
-            a["id"][:8],
-            a["title"][:50],
-            a.get("author") or "-",
-            a.get("published_date") or "-",
-        ])
-        table.add_row(*row)
-
-    console.print(table)
-
-    # URL一覧を表示
-    console.print()
-    for a in articles:
-        console.print(f"  [dim]{a['id'][:8]}[/dim]  [blue]{a.get('url') or '-'}[/blue]")
+        score = a.get("_score")
+        score_str = f"[magenta]\\[{score:.2f}][/magenta] " if score is not None else ""
+        console.print(f"{score_str}[cyan]{a['title']}[/cyan]")
+        author = a.get("author") or "-"
+        date = a.get("published_date") or "-"
+        console.print(f"       著者: {author}  日付: {date}")
+        console.print(f"       [blue]{a.get('url') or '-'}[/blue]")
+        console.print()
