@@ -250,3 +250,42 @@ def test_full_workflow(tmp_path):
         # Stats
         result = runner.invoke(cli, ["stats"])
         assert "太郎" in result.output
+
+
+def test_sync_with_embed(tmp_path):
+    runner = CliRunner()
+
+    sample_entry = {
+        "id": "art1",
+        "content": {
+            "title": "Test Article",
+            "url": "https://example.com",
+            "author": {"any_name": "Alice"},
+            "publisher": {"any_name": "Tech"},
+            "publication_date": "2025-01-01",
+            "tags": [{"name": "tech", "created_date": "2025-01-01"}],
+            "my_annotations": [],
+            "my_note": None,
+            "library": {"library_state": 1},
+        },
+        "annotations": [],
+    }
+
+    mock_client = MagicMock()
+    mock_client.fetch_all_articles.return_value = [sample_entry]
+
+    db_path = tmp_path / "test.db"
+
+    with patch("matter_hub.cli.get_client_from_config", return_value=mock_client), \
+         patch("matter_hub.cli.get_db_path", return_value=db_path), \
+         patch("matter_hub.cli._ensure_ollama", return_value=True), \
+         patch("matter_hub.ollama.generate_embedding", return_value=[0.1] * 768):
+        result = runner.invoke(cli, ["sync", "--embed"])
+
+    assert result.exit_code == 0
+    assert "Embedding" in result.output
+
+    db = Database(db_path)
+    emb = db.get_embedding("art1")
+    assert emb is not None
+    db.close()

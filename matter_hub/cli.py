@@ -70,8 +70,9 @@ def auth():
 
 @cli.command()
 @click.option("--tag", is_flag=True, help="同期後にOllamaで自動タグ付けを実行")
+@click.option("--embed", is_flag=True, help="同期後にEmbeddingを生成")
 @click.option("--model", default="gemma3:4b", help="Ollamaモデル名（デフォルト: gemma3:4b）")
-def sync(tag, model):
+def sync(tag, embed, model):
     """Matter APIから記事を同期"""
     client = get_client_from_config()
 
@@ -120,6 +121,9 @@ def sync(tag, model):
 
     if tag:
         _run_auto_tag(db, ollama_model=model)
+
+    if embed:
+        _run_embed(db)
 
     db.close()
 
@@ -185,6 +189,35 @@ def _run_auto_tag(db: Database, ollama_model: str = "gemma3:4b"):
         console.print(f"  {article['title'][:40]}... → {', '.join(tags) or '(タグなし)'}")
 
     console.print("[green]タグ付け完了[/green]")
+
+
+def _run_embed(db: Database):
+    import numpy as np
+    from matter_hub.ollama import build_embedding_text, generate_embedding
+
+    if not _ensure_ollama():
+        return
+
+    articles = db.articles_without_embedding()
+    if not articles:
+        console.print("[green]Embedding生成対象の記事はありません[/green]")
+        return
+
+    console.print(f"[yellow]{len(articles)} 件の記事のEmbeddingを生成中...[/yellow]")
+
+    for article in articles:
+        tags = [t["name"] for t in db.get_tags(article["id"])]
+        highlights = db.get_highlights(article["id"])
+        text = build_embedding_text(article, tags, highlights)
+        try:
+            embedding = generate_embedding(text)
+            embedding_bytes = np.array(embedding, dtype=np.float32).tobytes()
+            db.save_embedding(article["id"], embedding_bytes)
+            console.print(f"  {article['title'][:50]}... → OK")
+        except Exception as e:
+            console.print(f"  [red]{article['title'][:50]}... → エラー: {e}[/red]")
+
+    console.print("[green]Embedding生成完了[/green]")
 
 
 @cli.command()
