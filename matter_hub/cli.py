@@ -221,6 +221,7 @@ def _run_embed(db: Database):
 
 
 def _semantic_search(db: Database, query: str, top_n: int = 10) -> list[dict]:
+    """ハイブリッド検索: FTSスコアとセマンティック類似度を合算してランキング"""
     import numpy as np
     from matter_hub.ollama import generate_embedding
 
@@ -233,38 +234,62 @@ def _semantic_search(db: Database, query: str, top_n: int = 10) -> list[dict]:
     if not _ensure_ollama():
         return []
 
-    # クエリのembedding生成
+    # --- セマンティックスコア ---
     query_emb = np.array(generate_embedding(query), dtype=np.float32)
 
-    # 全embeddingを取得してコサイン類似度計算
     all_emb = db.get_all_embeddings()
     if not all_emb:
         console.print("[yellow]Embeddingが生成されていません。`matter-hub sync --embed` を実行してください。[/yellow]")
         return []
 
-    scored = []
+    semantic_scores = {}
     for row in all_emb:
         emb = np.frombuffer(row["embedding"], dtype=np.float32)
-        similarity = np.dot(query_emb, emb) / (np.linalg.norm(query_emb) * np.linalg.norm(emb))
-        scored.append((row["id"], float(similarity)))
+        similarity = float(np.dot(query_emb, emb) / (np.linalg.norm(query_emb) * np.linalg.norm(emb)))
+        semantic_scores[row["id"]] = similarity
 
-    scored.sort(key=lambda x: x[1], reverse=True)
+    # --- FTSスコア（0〜1に正規化）---
+    fts_scores = {}
+    if query.strip():
+        fts_rows = db.conn.execute(
+            """SELECT a.id, rank FROM articles a
+               JOIN articles_fts f ON a.rowid = f.rowid
+               WHERE articles_fts MATCH ?""",
+            (query,),
+        ).fetchall()
+        if fts_rows:
+            # FTS5のrankは負値（小さいほど良い）なので反転して0〜1に正規化
+            ranks = [r["rank"] for r in fts_rows]
+            min_rank, max_rank = min(ranks), max(ranks)
+            spread = max_rank - min_rank if max_rank != min_rank else 1.0
+            for r in fts_rows:
+                fts_scores[r["id"]] = (max_rank - r["rank"]) / spread
 
-    # 閾値以上の記事のみ返す
+    # --- スコア合算 ---
+    # FTSヒット時はボーナス(重み0.3)を加算
+    all_ids = set(semantic_scores.keys())
+    combined = []
+    for aid in all_ids:
+        sem = semantic_scores.get(aid, 0.0)
+        fts = fts_scores.get(aid, 0.0)
+        score = sem + 0.3 * fts
+        combined.append((aid, score))
+
+    combined.sort(key=lambda x: x[1], reverse=True)
+
     min_score = 0.3
-    filtered = [(aid, s) for aid, s in scored if s >= min_score][:top_n]
+    filtered = [(aid, s) for aid, s in combined if s >= min_score][:top_n]
 
     if not filtered:
         console.print("[yellow]類似度の高い記事が見つかりませんでした[/yellow]")
         return []
 
-    # 記事情報を取得して類似度順で返す
     articles = []
-    for article_id, sim in filtered:
+    for article_id, score in filtered:
         row = db.conn.execute("SELECT * FROM articles WHERE id = ?", (article_id,)).fetchone()
         if row:
             article = dict(row)
-            article["_score"] = sim
+            article["_score"] = score
             articles.append(article)
 
     return articles
