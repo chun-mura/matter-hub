@@ -496,6 +496,7 @@ def _print_articles_table(articles: list[dict]):
     table.add_column("ID", style="dim", max_width=8)
     table.add_column("タイトル", style="cyan", max_width=50)
     table.add_column("著者", style="green", max_width=20)
+    table.add_column("URL", style="blue", max_width=40)
     table.add_column("日付", style="yellow", max_width=12)
 
     for a in articles:
@@ -506,6 +507,7 @@ def _print_articles_table(articles: list[dict]):
             a["id"][:8],
             a["title"][:50],
             a.get("author") or "-",
+            a.get("url") or "-",
             a.get("published_date") or "-",
         ])
         table.add_row(*row)

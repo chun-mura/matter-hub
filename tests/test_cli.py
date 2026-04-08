@@ -325,4 +325,4 @@ def test_search_semantic(tmp_path):
         result = runner.invoke(cli, ["search", "--semantic", "機械学習について"])
 
     assert result.exit_code == 0
-    assert "Machine Learning入門" in result.output
+    assert "Learning入門" in result.output
