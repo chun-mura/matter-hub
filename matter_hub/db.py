@@ -63,6 +63,12 @@ class Database:
                 VALUES (new.rowid, new.title, new.author, new.publisher, new.note);
             END;
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS embeddings (
+                article_id TEXT PRIMARY KEY REFERENCES articles(id),
+                embedding BLOB NOT NULL
+            )
+        """)
         self.conn.commit()
 
     def upsert_article(self, article: dict) -> None:
@@ -190,6 +196,34 @@ class Database:
     def clear_matter_tags(self, article_id: str) -> None:
         self.conn.execute("DELETE FROM tags WHERE article_id = ? AND source = 'matter'", (article_id,))
         self.conn.commit()
+
+    def save_embedding(self, article_id: str, embedding: bytes) -> None:
+        self.conn.execute(
+            """INSERT INTO embeddings (article_id, embedding) VALUES (?, ?)
+               ON CONFLICT(article_id) DO UPDATE SET embedding=excluded.embedding""",
+            (article_id, embedding),
+        )
+        self.conn.commit()
+
+    def get_embedding(self, article_id: str) -> bytes | None:
+        row = self.conn.execute(
+            "SELECT embedding FROM embeddings WHERE article_id = ?",
+            (article_id,),
+        ).fetchone()
+        return row["embedding"] if row else None
+
+    def articles_without_embedding(self) -> list[dict]:
+        rows = self.conn.execute(
+            """SELECT a.* FROM articles a
+               WHERE a.id NOT IN (SELECT article_id FROM embeddings)""",
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_all_embeddings(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT article_id as id, embedding FROM embeddings",
+        ).fetchall()
+        return [{"id": r["id"], "embedding": r["embedding"]} for r in rows]
 
     def close(self):
         self.conn.close()

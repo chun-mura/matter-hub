@@ -1,3 +1,5 @@
+import numpy as np
+
 from matter_hub.db import Database
 
 
@@ -179,4 +181,63 @@ def test_stats(tmp_path):
     assert stats["total_articles"] == 2
     assert stats["total_tags"] == 1
     assert ("Alice", 2) in stats["top_authors"]
+    db.close()
+
+
+def test_save_and_get_embedding(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1", "title": "Test", "url": "https://example.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 1,
+    })
+    embedding = np.random.rand(768).astype(np.float32)
+    db.save_embedding("art1", embedding.tobytes())
+    result = db.get_embedding("art1")
+    assert result is not None
+    recovered = np.frombuffer(result, dtype=np.float32)
+    np.testing.assert_array_almost_equal(embedding, recovered)
+    db.close()
+
+
+def test_articles_without_embedding(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1", "title": "Has embedding", "url": "https://a.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 1,
+    })
+    db.upsert_article({
+        "id": "art2", "title": "No embedding", "url": "https://b.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 1,
+    })
+    embedding = np.random.rand(768).astype(np.float32)
+    db.save_embedding("art1", embedding.tobytes())
+    without = db.articles_without_embedding()
+    assert len(without) == 1
+    assert without[0]["id"] == "art2"
+    db.close()
+
+
+def test_get_all_embeddings(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1", "title": "A1", "url": "https://a.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 1,
+    })
+    db.upsert_article({
+        "id": "art2", "title": "A2", "url": "https://b.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 1,
+    })
+    emb1 = np.random.rand(768).astype(np.float32)
+    emb2 = np.random.rand(768).astype(np.float32)
+    db.save_embedding("art1", emb1.tobytes())
+    db.save_embedding("art2", emb2.tobytes())
+    results = db.get_all_embeddings()
+    assert len(results) == 2
+    assert results[0]["id"] in ("art1", "art2")
+    assert len(np.frombuffer(results[0]["embedding"], dtype=np.float32)) == 768
     db.close()
