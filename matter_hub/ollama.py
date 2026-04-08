@@ -65,3 +65,29 @@ def tag_article_ollama(
     )
     resp.raise_for_status()
     return parse_tags_response(resp.json()["response"])
+
+
+def build_embedding_text(article: dict, tags: list[str], highlights: list[dict]) -> str:
+    parts = [f"タイトル: {article['title']}"]
+    if article.get("author"):
+        parts.append(f"著者: {article['author']}")
+    if tags:
+        parts.append(f"タグ: {', '.join(tags)}")
+    if highlights:
+        hl_texts = [h["text"] for h in highlights]
+        parts.append(f"ハイライト: {' / '.join(hl_texts)}")
+    return "\n".join(parts)
+
+
+def generate_embedding(
+    text: str,
+    model: str = "nomic-embed-text",
+    base_url: str = "http://localhost:11434",
+) -> list[float]:
+    resp = httpx.post(
+        f"{base_url}/api/embed",
+        json={"model": model, "input": text},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()["embeddings"][0]

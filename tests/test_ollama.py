@@ -1,4 +1,10 @@
-from matter_hub.ollama import build_prompt, parse_tags_response, tag_article_ollama
+from matter_hub.ollama import (
+    build_prompt,
+    parse_tags_response,
+    tag_article_ollama,
+    build_embedding_text,
+    generate_embedding,
+)
 
 
 def test_build_prompt():
@@ -59,3 +65,32 @@ def test_tag_article_ollama(httpx_mock):
     tags = tag_article_ollama(article, [], [])
     assert len(tags) == 3
     assert "AI" in tags
+
+
+def test_build_embedding_text():
+    article = {"title": "LLM入門", "author": "Alice", "url": "https://example.com"}
+    tags = ["AI", "機械学習"]
+    highlights = [{"text": "transformers are key"}]
+    text = build_embedding_text(article, tags, highlights)
+    assert "LLM入門" in text
+    assert "Alice" in text
+    assert "AI" in text
+    assert "transformers are key" in text
+
+
+def test_build_embedding_text_minimal():
+    article = {"title": "Test", "author": None, "url": "https://example.com"}
+    text = build_embedding_text(article, [], [])
+    assert "Test" in text
+    assert "著者" not in text
+
+
+def test_generate_embedding(httpx_mock):
+    fake_embedding = [0.1] * 768
+    httpx_mock.add_response(
+        url="http://localhost:11434/api/embed",
+        json={"embeddings": [fake_embedding]},
+    )
+    result = generate_embedding("test text")
+    assert len(result) == 768
+    assert result[0] == 0.1
