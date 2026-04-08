@@ -251,28 +251,28 @@ def _semantic_search(db: Database, query: str, top_n: int = 10) -> list[dict]:
     # --- FTSスコア（0〜1に正規化）---
     fts_scores = {}
     if query.strip():
+        # スペース区切りの単語をOR検索に変換
+        terms = query.strip().split()
+        fts_query = " OR ".join(f'"{t}"' for t in terms)
         fts_rows = db.conn.execute(
             """SELECT a.id, rank FROM articles a
                JOIN articles_fts f ON a.rowid = f.rowid
                WHERE articles_fts MATCH ?""",
-            (query,),
+            (fts_query,),
         ).fetchall()
         if fts_rows:
-            # FTS5のrankは負値（小さいほど良い）なので反転して0〜1に正規化
-            ranks = [r["rank"] for r in fts_rows]
-            min_rank, max_rank = min(ranks), max(ranks)
-            spread = max_rank - min_rank if max_rank != min_rank else 1.0
+            # FTSヒットした記事にはスコア1.0を付与（ヒット有無が重要）
             for r in fts_rows:
-                fts_scores[r["id"]] = (max_rank - r["rank"]) / spread
+                fts_scores[r["id"]] = 1.0
 
     # --- スコア合算 ---
-    # FTSヒット時はボーナス(重み0.3)を加算
+    # FTSヒット時はボーナス(重み0.5)を加算
     all_ids = set(semantic_scores.keys())
     combined = []
     for aid in all_ids:
         sem = semantic_scores.get(aid, 0.0)
         fts = fts_scores.get(aid, 0.0)
-        score = sem + 0.3 * fts
+        score = sem + 0.5 * fts
         combined.append((aid, score))
 
     combined.sort(key=lambda x: x[1], reverse=True)

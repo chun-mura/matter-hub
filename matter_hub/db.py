@@ -9,7 +9,26 @@ class Database:
     def __init__(self, db_path: Path):
         self.conn = sqlite3.connect(str(db_path))
         self.conn.row_factory = sqlite3.Row
+        self._migrate_fts_trigram()
         self._init_tables()
+
+    def _migrate_fts_trigram(self):
+        """既存のFTSテーブルがtrigram以外なら再作成する。"""
+        cur = self.conn.cursor()
+        row = cur.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='articles_fts'"
+        ).fetchone()
+        if row and "trigram" not in row[0]:
+            cur.executescript("""
+                DROP TRIGGER IF EXISTS articles_ai;
+                DROP TRIGGER IF EXISTS articles_ad;
+                DROP TRIGGER IF EXISTS articles_au;
+                DROP TABLE IF EXISTS articles_fts;
+            """)
+            self.conn.commit()
+            self._needs_fts_rebuild = True
+        else:
+            self._needs_fts_rebuild = False
 
     def _init_tables(self):
         cur = self.conn.cursor()
@@ -43,7 +62,8 @@ class Database:
 
             CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
                 title, author, publisher, note,
-                content='articles', content_rowid='rowid'
+                content='articles', content_rowid='rowid',
+                tokenize='trigram'
             );
 
             CREATE TRIGGER IF NOT EXISTS articles_ai AFTER INSERT ON articles BEGIN
@@ -70,6 +90,14 @@ class Database:
             )
         """)
         self.conn.commit()
+
+        if self._needs_fts_rebuild:
+            self.conn.execute("""
+                INSERT INTO articles_fts(rowid, title, author, publisher, note)
+                SELECT rowid, title, author, publisher, note FROM articles
+            """)
+            self.conn.commit()
+            self._needs_fts_rebuild = False
 
     def upsert_article(self, article: dict) -> None:
         now = datetime.now(timezone.utc).isoformat()
