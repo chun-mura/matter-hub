@@ -220,17 +220,61 @@ def _run_embed(db: Database):
     console.print("[green]Embedding生成完了[/green]")
 
 
+def _semantic_search(db: Database, query: str, top_n: int = 10) -> list[dict]:
+    import numpy as np
+    from matter_hub.ollama import generate_embedding
+
+    # embedding未生成の記事があれば自動生成
+    without = db.articles_without_embedding()
+    if without:
+        console.print(f"[yellow]{len(without)} 件の記事のEmbeddingを生成中...[/yellow]")
+        _run_embed(db)
+
+    if not _ensure_ollama():
+        return []
+
+    # クエリのembedding生成
+    query_emb = np.array(generate_embedding(query), dtype=np.float32)
+
+    # 全embeddingを取得してコサイン類似度計算
+    all_emb = db.get_all_embeddings()
+    if not all_emb:
+        console.print("[yellow]Embeddingが生成されていません。`matter-hub sync --embed` を実行してください。[/yellow]")
+        return []
+
+    scored = []
+    for row in all_emb:
+        emb = np.frombuffer(row["embedding"], dtype=np.float32)
+        similarity = np.dot(query_emb, emb) / (np.linalg.norm(query_emb) * np.linalg.norm(emb))
+        scored.append((row["id"], float(similarity)))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    top_ids = [s[0] for s in scored[:top_n]]
+
+    # 記事情報を取得して類似度順で返す
+    articles = []
+    for article_id in top_ids:
+        row = db.conn.execute("SELECT * FROM articles WHERE id = ?", (article_id,)).fetchone()
+        if row:
+            articles.append(dict(row))
+
+    return articles
+
+
 @cli.command()
 @click.argument("query", default="")
 @click.option("--tag", "tag_filter", default=None, help="タグで絞り込み")
 @click.option("--author", default=None, help="著者で絞り込み")
 @click.option("--after", default=None, help="指定日以降の記事 (YYYY-MM-DD)")
+@click.option("--semantic", is_flag=True, help="セマンティック検索（意味的な類似度で検索）")
 @click.option("--json", "as_json", is_flag=True, help="JSON形式で出力")
-def search(query, tag_filter, author, after, as_json):
+def search(query, tag_filter, author, after, semantic, as_json):
     """記事を検索"""
     db = get_db()
 
-    if tag_filter:
+    if semantic:
+        articles = _semantic_search(db, query)
+    elif tag_filter:
         articles = db.search_by_tag(tag_filter)
     elif query:
         articles = db.search(query)

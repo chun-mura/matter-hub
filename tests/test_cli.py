@@ -1,6 +1,7 @@
 # tests/test_cli.py
 from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
+import numpy as np
 
 from matter_hub.cli import cli
 from matter_hub.db import Database
@@ -117,6 +118,27 @@ def _seed_db(db_path):
     db.add_tag("a1", "機械学習", "ai")
     db.add_tag("a2", "料理", "ai")
     db.add_highlight("a1", "transformers are powerful", "note1", "2025-01-16")
+    db.close()
+    return db_path
+
+
+def _seed_db_with_embeddings(db_path):
+    """Helper to create a seeded DB with embeddings."""
+    db = Database(db_path)
+    db.upsert_article({
+        "id": "a1", "title": "Machine Learning入門", "url": "https://ml.example.com",
+        "author": "Alice", "publisher": "TechBlog",
+        "published_date": "2025-01-15", "note": None, "library_state": 1,
+    })
+    db.upsert_article({
+        "id": "a2", "title": "料理レシピ集", "url": "https://cook.example.com",
+        "author": "Bob", "publisher": "FoodBlog",
+        "published_date": "2025-02-10", "note": None, "library_state": 1,
+    })
+    emb1 = np.ones(768, dtype=np.float32)
+    emb2 = -np.ones(768, dtype=np.float32)
+    db.save_embedding("a1", emb1.tobytes())
+    db.save_embedding("a2", emb2.tobytes())
     db.close()
     return db_path
 
@@ -289,3 +311,18 @@ def test_sync_with_embed(tmp_path):
     emb = db.get_embedding("art1")
     assert emb is not None
     db.close()
+
+
+def test_search_semantic(tmp_path):
+    runner = CliRunner()
+    db_path = _seed_db_with_embeddings(tmp_path / "test.db")
+
+    query_emb = np.ones(768, dtype=np.float32) * 0.9
+
+    with patch("matter_hub.cli.get_db_path", return_value=db_path), \
+         patch("matter_hub.cli._ensure_ollama", return_value=True), \
+         patch("matter_hub.ollama.generate_embedding", return_value=query_emb.tolist()):
+        result = runner.invoke(cli, ["search", "--semantic", "機械学習について"])
+
+    assert result.exit_code == 0
+    assert "Machine Learning入門" in result.output
