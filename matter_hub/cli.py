@@ -249,14 +249,23 @@ def _semantic_search(db: Database, query: str, top_n: int = 10) -> list[dict]:
         scored.append((row["id"], float(similarity)))
 
     scored.sort(key=lambda x: x[1], reverse=True)
-    top_ids = [s[0] for s in scored[:top_n]]
+
+    # 閾値以上の記事のみ返す
+    min_score = 0.3
+    filtered = [(aid, s) for aid, s in scored if s >= min_score][:top_n]
+
+    if not filtered:
+        console.print("[yellow]類似度の高い記事が見つかりませんでした[/yellow]")
+        return []
 
     # 記事情報を取得して類似度順で返す
     articles = []
-    for article_id in top_ids:
+    for article_id, sim in filtered:
         row = db.conn.execute("SELECT * FROM articles WHERE id = ?", (article_id,)).fetchone()
         if row:
-            articles.append(dict(row))
+            article = dict(row)
+            article["_score"] = sim
+            articles.append(article)
 
     return articles
 
@@ -454,18 +463,26 @@ def _print_articles_table(articles: list[dict]):
         console.print("[yellow]記事が見つかりませんでした[/yellow]")
         return
 
+    has_score = any("_score" in a for a in articles)
+
     table = Table()
+    if has_score:
+        table.add_column("類似度", style="magenta", justify="right", max_width=6)
     table.add_column("ID", style="dim", max_width=8)
     table.add_column("タイトル", style="cyan", max_width=50)
     table.add_column("著者", style="green", max_width=20)
     table.add_column("日付", style="yellow", max_width=12)
 
     for a in articles:
-        table.add_row(
+        row = []
+        if has_score:
+            row.append(f"{a.get('_score', 0):.2f}")
+        row.extend([
             a["id"][:8],
             a["title"][:50],
             a.get("author") or "-",
             a.get("published_date") or "-",
-        )
+        ])
+        table.add_row(*row)
 
     console.print(table)
