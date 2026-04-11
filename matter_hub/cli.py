@@ -305,20 +305,21 @@ def _semantic_search(db: Database, query: str, top_n: int = 10) -> list[dict]:
 @click.option("--tag", "tag_filter", default=None, help="タグで絞り込み")
 @click.option("--author", default=None, help="著者で絞り込み")
 @click.option("--after", default=None, help="指定日以降の記事 (YYYY-MM-DD)")
+@click.option("--source", default=None, help="ソースで絞り込み（matter/hatena/hackernews/reddit/zenn/qiita/x/web）")
 @click.option("--semantic", is_flag=True, help="セマンティック検索（意味的な類似度で検索）")
 @click.option("--json", "as_json", is_flag=True, help="JSON形式で出力")
-def search(query, tag_filter, author, after, semantic, as_json):
+def search(query, tag_filter, author, after, source, semantic, as_json):
     """記事を検索"""
     db = get_db()
 
     if semantic:
         articles = _semantic_search(db, query)
     elif tag_filter:
-        articles = db.search_by_tag(tag_filter)
+        articles = db.search_by_tag(tag_filter, source=source)
     elif query:
-        articles = db.search(query)
+        articles = db.search(query, source=source)
     else:
-        articles = db.list_articles()
+        articles = db.list_articles(source=source)
 
     if author:
         articles = [a for a in articles if a.get("author") and author.lower() in a["author"].lower()]
@@ -336,12 +337,13 @@ def search(query, tag_filter, author, after, semantic, as_json):
 
 @cli.command(name="list")
 @click.option("--all", "show_all", is_flag=True, help="全件表示")
+@click.option("--source", default=None, help="ソースで絞り込み（matter/hatena/hackernews/reddit/zenn/qiita/x/web）")
 @click.option("--json", "as_json", is_flag=True, help="JSON形式で出力")
-def list_cmd(show_all, as_json):
+def list_cmd(show_all, source, as_json):
     """記事一覧を表示"""
     db = get_db()
     limit = None if show_all else 20
-    articles = db.list_articles(limit=limit)
+    articles = db.list_articles(limit=limit, source=source)
 
     if as_json:
         import json
@@ -394,6 +396,66 @@ def tag_remove(article_id, tag_name):
     db = get_db()
     db.remove_tag(article_id, tag_name)
     console.print(f"[yellow]タグ '{tag_name}' を削除しました[/yellow]")
+    db.close()
+
+
+@cli.group(name="import")
+def import_cmd():
+    """外部URLから記事をインポート"""
+    pass
+
+
+@import_cmd.command(name="url")
+@click.argument("urls", nargs=-1, required=True)
+@click.option("--source", default=None, help="ソース種別（hatena/hackernews/reddit/zenn/qiita/x/web）")
+@click.option("--note", default=None, help="メモを追加")
+@click.option("--tag", "tag_names", multiple=True, help="タグを追加（複数指定可）")
+def import_url(urls, source, note, tag_names):
+    """URLから記事をインポート"""
+    from matter_hub.importer import fetch_article
+
+    db = get_db()
+    for url in urls:
+        try:
+            article = fetch_article(url, source=source, note=note)
+            db.upsert_article(article)
+            for tag_name in tag_names:
+                db.add_tag(article["id"], tag_name, "manual")
+            console.print(f"  [green]✓[/green] {article['title'][:60]} [dim]({article['source']})[/dim]")
+        except Exception as e:
+            console.print(f"  [red]✗[/red] {url} → {e}")
+
+    console.print(f"[green]{len(urls)} 件のURLを処理しました[/green]")
+    db.close()
+
+
+@import_cmd.command(name="json")
+@click.argument("file", type=click.Path(exists=True))
+def import_json(file):
+    """JSONファイルから記事を一括インポート
+
+    JSONフォーマット: [{"url": "...", "title": "...", "source": "...", "note": "..."}, ...]
+    urlは必須、他はオプション。
+    """
+    import json as json_mod
+    from matter_hub.importer import parse_json_import
+
+    with open(file) as f:
+        data = json_mod.load(f)
+
+    if not isinstance(data, list):
+        console.print("[red]JSONはarticleオブジェクトの配列である必要があります[/red]")
+        sys.exit(1)
+
+    articles = parse_json_import(data)
+    db = get_db()
+    count = 0
+    for article in articles:
+        db.upsert_article(article)
+        count += 1
+        console.print(f"  [green]✓[/green] {article['title'][:60]} [dim]({article['source']})[/dim]")
+
+    console.print(f"[green]{count} 件の記事をインポートしました[/green]")
     db.close()
 
 
@@ -467,15 +529,17 @@ def help_cmd(ctx, command_name):
     console.print(f"\n[bold]Matter Hub[/bold] v{__version__} — Matter記事の検索・タグ管理CLI\n")
 
     commands = [
-        ("auth",       "QRコード認証でMatterにログイン"),
-        ("sync",       "Matter APIから記事を同期（--tag/--embed）"),
-        ("list",       "記事一覧を表示"),
-        ("search",     "キーワード・タグ・著者・日付で記事を検索（--semantic対応）"),
-        ("tags",       "タグ一覧を表示（記事数付き）"),
-        ("tag add",    "記事にタグを手動追加"),
-        ("tag remove", "記事からタグを削除"),
-        ("stats",      "興味の傾向を分析"),
-        ("help",       "このヘルプを表示"),
+        ("auth",        "QRコード認証でMatterにログイン"),
+        ("sync",        "Matter APIから記事を同期（--tag/--embed）"),
+        ("import url",  "URLから記事をインポート"),
+        ("import json", "JSONファイルから一括インポート"),
+        ("list",        "記事一覧を表示（--source対応）"),
+        ("search",      "キーワード・タグ・著者・日付で記事を検索（--semantic/--source対応）"),
+        ("tags",        "タグ一覧を表示（記事数付き）"),
+        ("tag add",     "記事にタグを手動追加"),
+        ("tag remove",  "記事からタグを削除"),
+        ("stats",       "興味の傾向を分析"),
+        ("help",        "このヘルプを表示"),
     ]
 
     table = Table(show_header=False, box=None, padding=(0, 2))
@@ -496,7 +560,8 @@ def _print_articles(articles: list[dict]):
     for a in articles:
         score = a.get("_score")
         score_str = f"[magenta]\\[{score:.2f}][/magenta] " if score is not None else ""
-        console.print(f"{score_str}[cyan]{a['title']}[/cyan]")
+        source = a.get("source") or "matter"
+        console.print(f"{score_str}[cyan]{a['title']}[/cyan] [dim]({source})[/dim]")
         author = a.get("author") or "-"
         date = a.get("published_date") or "-"
         console.print(f"       著者: {author}  日付: {date}")

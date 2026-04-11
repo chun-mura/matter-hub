@@ -9,12 +9,14 @@ class Database:
     def __init__(self, db_path: Path):
         self.conn = sqlite3.connect(str(db_path))
         self.conn.row_factory = sqlite3.Row
-        self._migrate_fts_trigram()
+        self._migrate()
         self._init_tables()
 
-    def _migrate_fts_trigram(self):
-        """既存のFTSテーブルがtrigram以外なら再作成する。"""
+    def _migrate(self):
+        """スキーマのマイグレーション。"""
         cur = self.conn.cursor()
+
+        # FTSテーブルがtrigram以外なら再作成
         row = cur.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='articles_fts'"
         ).fetchone()
@@ -30,6 +32,16 @@ class Database:
         else:
             self._needs_fts_rebuild = False
 
+        # articlesテーブルにsourceカラムを追加（テーブルが既に存在する場合のみ）
+        table_exists = cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='articles'"
+        ).fetchone()
+        if table_exists:
+            columns = [r[1] for r in cur.execute("PRAGMA table_info(articles)").fetchall()]
+            if "source" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN source TEXT DEFAULT 'matter'")
+                self.conn.commit()
+
     def _init_tables(self):
         cur = self.conn.cursor()
         cur.executescript("""
@@ -42,6 +54,7 @@ class Database:
                 published_date TEXT,
                 note TEXT,
                 library_state INTEGER,
+                source TEXT DEFAULT 'matter',
                 synced_at TEXT
             );
 
@@ -101,14 +114,15 @@ class Database:
 
     def upsert_article(self, article: dict) -> None:
         now = datetime.now(timezone.utc).isoformat()
+        source = article.get("source", "matter")
         self.conn.execute(
-            """INSERT INTO articles (id, title, url, author, publisher, published_date, note, library_state, synced_at)
-               VALUES (:id, :title, :url, :author, :publisher, :published_date, :note, :library_state, :synced_at)
+            """INSERT INTO articles (id, title, url, author, publisher, published_date, note, library_state, source, synced_at)
+               VALUES (:id, :title, :url, :author, :publisher, :published_date, :note, :library_state, :source, :synced_at)
                ON CONFLICT(id) DO UPDATE SET
                  title=excluded.title, url=excluded.url, author=excluded.author,
                  publisher=excluded.publisher, published_date=excluded.published_date,
-                 note=excluded.note, library_state=excluded.library_state, synced_at=excluded.synced_at""",
-            {**article, "synced_at": now},
+                 note=excluded.note, library_state=excluded.library_state, source=excluded.source, synced_at=excluded.synced_at""",
+            {**article, "source": source, "synced_at": now},
         )
         self.conn.commit()
 
@@ -153,33 +167,56 @@ class Database:
         ).fetchall()
         return [{"text": r["text"], "note": r["note"], "created_date": r["created_date"]} for r in rows]
 
-    def search(self, query: str) -> list[dict]:
+    def search(self, query: str, source: str | None = None) -> list[dict]:
         if not query.strip():
-            return self.list_articles()
-        rows = self.conn.execute(
-            """SELECT a.* FROM articles a
-               JOIN articles_fts f ON a.rowid = f.rowid
-               WHERE articles_fts MATCH ?
-               ORDER BY rank""",
-            (query,),
-        ).fetchall()
+            return self.list_articles(source=source)
+        if source:
+            rows = self.conn.execute(
+                """SELECT a.* FROM articles a
+                   JOIN articles_fts f ON a.rowid = f.rowid
+                   WHERE articles_fts MATCH ? AND a.source = ?
+                   ORDER BY rank""",
+                (query, source),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """SELECT a.* FROM articles a
+                   JOIN articles_fts f ON a.rowid = f.rowid
+                   WHERE articles_fts MATCH ?
+                   ORDER BY rank""",
+                (query,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
-    def search_by_tag(self, tag_name: str) -> list[dict]:
-        rows = self.conn.execute(
-            """SELECT a.* FROM articles a
-               JOIN tags t ON a.id = t.article_id
-               WHERE t.name = ?
-               ORDER BY a.published_date DESC""",
-            (tag_name,),
-        ).fetchall()
+    def search_by_tag(self, tag_name: str, source: str | None = None) -> list[dict]:
+        if source:
+            rows = self.conn.execute(
+                """SELECT a.* FROM articles a
+                   JOIN tags t ON a.id = t.article_id
+                   WHERE t.name = ? AND a.source = ?
+                   ORDER BY a.published_date DESC""",
+                (tag_name, source),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """SELECT a.* FROM articles a
+                   JOIN tags t ON a.id = t.article_id
+                   WHERE t.name = ?
+                   ORDER BY a.published_date DESC""",
+                (tag_name,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
-    def list_articles(self, limit: int | None = None) -> list[dict]:
-        sql = "SELECT * FROM articles ORDER BY synced_at DESC"
+    def list_articles(self, limit: int | None = None, source: str | None = None) -> list[dict]:
+        params = []
+        sql = "SELECT * FROM articles"
+        if source:
+            sql += " WHERE source = ?"
+            params.append(source)
+        sql += " ORDER BY synced_at DESC"
         if limit:
             sql += f" LIMIT {limit}"
-        rows = self.conn.execute(sql).fetchall()
+        rows = self.conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
     def list_tags(self) -> list[tuple[str, int]]:
