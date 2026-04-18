@@ -307,7 +307,7 @@ def _seed(db):
         ("a1", "Python basics",  0, 0, ["Python"]),
         ("a2", "Rust ownership",  0, 0, ["Rust"]),
         ("a3", "Python + AI",     0, 0, ["Python", "AI"]),
-        ("a4", "Old archived",    1, 0, ["Python"]),
+        ("a4", "Old archived",    2, 0, ["Python"]),
         ("a5", "Trashed item",    0, 1, ["Python"]),
     ]
     for aid, title, ls, deleted, tags in samples:
@@ -390,12 +390,12 @@ def test_list_filtered_query_and_tags_combined(tmp_path):
 
 def test_active_view_includes_null_and_queue_state(tmp_path):
     db = Database(tmp_path / "t.db")
-    # Matter emits library_state in {None, 1, 2} for synced items. Only state=1 is archived.
+    # Matter emits library_state in {None, 1, 2} for synced items. Only state=2 is archived.
     samples = [
         ("null_item",  None),
         ("zero_item",  0),
-        ("queue_item", 2),
-        ("archive",    1),
+        ("queue_item", 1),
+        ("archive",    2),
     ]
     for aid, ls in samples:
         db.upsert_article({

@@ -4,11 +4,11 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Matter library_state: 0 = library, 1 = archived, 2 = queue, 3 = deleted (sync hard-removes).
-# "archived" means only explicitly archived (state=1); NULL/0/2 are treated as active.
+# Matter library_state: 0 = library, 1 = queue, 2 = archived, 3 = deleted (sync hard-removes).
+# "archived" means only explicitly archived (state=2); NULL/0/1 are treated as active.
 _VIEW_CLAUSES = {
-    "active":   "a.deleted = 0 AND (a.library_state IS NULL OR a.library_state != 1)",
-    "archived": "a.deleted = 0 AND a.library_state = 1",
+    "active":   "a.deleted = 0 AND (a.library_state IS NULL OR a.library_state != 2)",
+    "archived": "a.deleted = 0 AND a.library_state = 2",
     "trash":    "a.deleted = 1",
 }
 

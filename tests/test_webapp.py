@@ -34,7 +34,7 @@ def _seed_many(db_path):
         ("Python basics",  ["Python"],         0),
         ("Rust ownership", ["Rust"],           0),
         ("Python + AI",    ["Python", "AI"],   0),
-        ("Archived one",   ["Python"],         1),
+        ("Archived one",   ["Python"],         2),
     ]):
         aid = f"a{i}"
         db.upsert_article({
