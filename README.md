@@ -56,3 +56,22 @@ uv run matter-hub stats           # 興味の傾向（著者別、月別）
 
 - 設定（認証トークン）: `~/.matter-hub/config.json`
 - データベース（SQLite）: `data/matter-hub.db`（プロジェクト内、gitignore対象）
+
+## Webapp (Docker)
+
+ブラウザから検索・タグフィルター・アーカイブ閲覧・削除ができるローカルWebアプリ。
+
+```bash
+# 起動
+docker compose up -d
+
+# http://localhost:8000 を開く
+
+# 停止
+docker compose down
+```
+
+- DBファイル (`data/matter-hub.db`) はCLIとコンテナで共有される。
+- 検索はFTS5 trigram。タグフィルターはAND。
+- `active` (Matterで保存中) / `archived` (Matterでアーカイブ済) / `trash` (ローカル削除) を切替。
+- `trash` で `restore` すると復元。`active`/`archived` で `delete` するとローカルで非表示、次のsyncでも再importされない。
