@@ -88,3 +88,26 @@ def test_tags_partial_active_view(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert "Python" in r.text
     assert "Rust" in r.text
+
+
+def test_delete_soft_deletes_and_returns_empty(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    c = TestClient(create_app())
+    r = c.post("/articles/a0/delete")
+    assert r.status_code == 200
+    assert r.text.strip() == ""
+    db = Database(db_path)
+    row = db.conn.execute("SELECT deleted FROM articles WHERE id='a0'").fetchone()
+    assert row["deleted"] == 1
+    db.close()
+
+
+def test_delete_unknown_returns_404(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    c = TestClient(create_app())
+    r = c.post("/articles/missing/delete")
+    assert r.status_code == 404

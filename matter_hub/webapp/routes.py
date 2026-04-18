@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from matter_hub.config import get_db_path
@@ -97,3 +97,15 @@ def tags_partial(
             "view": view,
         },
     )
+
+
+@router.post("/articles/{article_id}/delete")
+def delete_article(article_id: str) -> HTMLResponse:
+    db = _db()
+    try:
+        ok = db.set_deleted(article_id, True)
+    finally:
+        db.close()
+    if not ok:
+        raise HTTPException(status_code=404)
+    return HTMLResponse(content="", status_code=200)
