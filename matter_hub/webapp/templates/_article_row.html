@@ -1,3 +1,24 @@
-<li class="article-row border rounded p-3 bg-white">
-  <a class="font-medium text-blue-700 hover:underline" href="{{ a.url }}" target="_blank" rel="noopener">{{ a.title }}</a>
+<li class="article-row border rounded p-3 bg-white" id="row-{{ a.id }}">
+  <div class="flex justify-between items-start">
+    <div>
+      <a class="font-medium text-blue-700 hover:underline" href="{{ a.url }}" target="_blank" rel="noopener">{{ a.title }}</a>
+      <div class="text-xs text-gray-500 mt-1">
+        {% if a.author %}{{ a.author }}{% endif %}
+        {% if a.publisher %} · {{ a.publisher }}{% endif %}
+        {% if a.published_date %} · {{ a.published_date[:10] }}{% endif %}
+      </div>
+    </div>
+    <div class="text-xs space-x-2">
+      {% if view == 'trash' %}
+        <button class="px-2 py-1 bg-green-600 text-white rounded"
+                hx-post="/articles/{{ a.id }}/restore"
+                hx-target="#row-{{ a.id }}" hx-swap="outerHTML">restore</button>
+      {% else %}
+        <button class="px-2 py-1 bg-red-600 text-white rounded"
+                hx-post="/articles/{{ a.id }}/delete"
+                hx-target="#row-{{ a.id }}" hx-swap="outerHTML"
+                hx-confirm="Delete this article?">delete</button>
+      {% endif %}
+    </div>
+  </div>
 </li>
