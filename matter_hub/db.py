@@ -9,6 +9,7 @@ class Database:
     def __init__(self, db_path: Path):
         self.conn = sqlite3.connect(str(db_path))
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self._migrate()
         self._init_tables()
 
@@ -41,6 +42,9 @@ class Database:
             if "source" not in columns:
                 cur.execute("ALTER TABLE articles ADD COLUMN source TEXT DEFAULT 'matter'")
                 self.conn.commit()
+            if "deleted" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN deleted INTEGER DEFAULT 0")
+                self.conn.commit()
 
     def _init_tables(self):
         cur = self.conn.cursor()
@@ -55,6 +59,7 @@ class Database:
                 note TEXT,
                 library_state INTEGER,
                 source TEXT DEFAULT 'matter',
+                deleted INTEGER DEFAULT 0,
                 synced_at TEXT
             );
 

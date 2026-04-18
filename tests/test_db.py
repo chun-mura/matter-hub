@@ -241,3 +241,39 @@ def test_get_all_embeddings(tmp_path):
     assert results[0]["id"] in ("art1", "art2")
     assert len(np.frombuffer(results[0]["embedding"], dtype=np.float32)) == 768
     db.close()
+
+
+def test_deleted_column_added(tmp_path):
+    db = Database(tmp_path / "test.db")
+    cols = [r[1] for r in db.conn.execute("PRAGMA table_info(articles)").fetchall()]
+    assert "deleted" in cols
+    db.close()
+
+
+def test_deleted_column_default_zero(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1", "title": "T", "url": "https://e.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    row = db.conn.execute("SELECT deleted FROM articles WHERE id='art1'").fetchone()
+    assert row["deleted"] == 0
+    db.close()
+
+
+def test_wal_mode_enabled(tmp_path):
+    db = Database(tmp_path / "test.db")
+    mode = db.conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode.lower() == "wal"
+    db.close()
+
+
+def test_migration_idempotent_when_deleted_exists(tmp_path):
+    db_path = tmp_path / "test.db"
+    db1 = Database(db_path)
+    db1.close()
+    db2 = Database(db_path)
+    cols = [r[1] for r in db2.conn.execute("PRAGMA table_info(articles)").fetchall()]
+    assert cols.count("deleted") == 1
+    db2.close()
