@@ -299,3 +299,79 @@ def test_set_deleted_unknown_id_returns_false(tmp_path):
     db = Database(tmp_path / "test.db")
     assert db.set_deleted("missing", True) is False
     db.close()
+
+
+def _seed(db):
+    samples = [
+        # (id, title, library_state, deleted, tags)
+        ("a1", "Python basics",  0, 0, ["Python"]),
+        ("a2", "Rust ownership",  0, 0, ["Rust"]),
+        ("a3", "Python + AI",     0, 0, ["Python", "AI"]),
+        ("a4", "Old archived",    1, 0, ["Python"]),
+        ("a5", "Trashed item",    0, 1, ["Python"]),
+    ]
+    for aid, title, ls, deleted, tags in samples:
+        db.upsert_article({
+            "id": aid, "title": title, "url": f"https://e.com/{aid}",
+            "author": None, "publisher": None, "published_date": None,
+            "note": None, "library_state": ls,
+        })
+        if deleted:
+            db.set_deleted(aid, True)
+        for t in tags:
+            db.add_tag(aid, t, "matter")
+
+
+def test_list_filtered_active_default(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(q=None, tags=[], view="active", limit=50, offset=0)
+    ids = {r["id"] for r in rows}
+    assert ids == {"a1", "a2", "a3"}
+    assert total == 3
+    db.close()
+
+
+def test_list_filtered_archived_view(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(q=None, tags=[], view="archived", limit=50, offset=0)
+    assert {r["id"] for r in rows} == {"a4"}
+    assert total == 1
+    db.close()
+
+
+def test_list_filtered_trash_view(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(q=None, tags=[], view="trash", limit=50, offset=0)
+    assert {r["id"] for r in rows} == {"a5"}
+    assert total == 1
+    db.close()
+
+
+def test_list_filtered_tags_and_semantics(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, _ = db.list_articles_filtered(q=None, tags=["Python", "AI"], view="active", limit=50, offset=0)
+    assert {r["id"] for r in rows} == {"a3"}
+    db.close()
+
+
+def test_list_filtered_query_fts(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, _ = db.list_articles_filtered(q="Rust", tags=[], view="active", limit=50, offset=0)
+    assert {r["id"] for r in rows} == {"a2"}
+    db.close()
+
+
+def test_list_filtered_pagination(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(q=None, tags=[], view="active", limit=2, offset=0)
+    assert len(rows) == 2
+    assert total == 3
+    rows2, _ = db.list_articles_filtered(q=None, tags=[], view="active", limit=2, offset=2)
+    assert len(rows2) == 1
+    db.close()

@@ -320,5 +320,56 @@ class Database:
         self.conn.commit()
         return True
 
+    def list_articles_filtered(
+        self,
+        q: str | None,
+        tags: list[str],
+        view: str,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[dict], int]:
+        view_clauses = {
+            "active":   "a.deleted = 0 AND a.library_state = 0",
+            "archived": "a.deleted = 0 AND a.library_state != 0",
+            "trash":    "a.deleted = 1",
+        }
+        view_sql = view_clauses.get(view, view_clauses["active"])
+
+        joins: list[str] = []
+        where = [view_sql]
+        params: list = []
+
+        if q and q.strip():
+            joins.append("JOIN articles_fts f ON a.rowid = f.rowid")
+            where.append("articles_fts MATCH ?")
+            params.append(q)
+
+        group_having = ""
+        if tags:
+            placeholders = ",".join(["?"] * len(tags))
+            joins.append(f"JOIN tags t ON a.id = t.article_id AND t.name IN ({placeholders})")
+            params.extend(tags)
+            group_having = f" GROUP BY a.id HAVING COUNT(DISTINCT t.name) = {len(tags)}"
+
+        join_sql = " ".join(joins)
+        where_sql = " AND ".join(where)
+
+        count_sql = (
+            f"SELECT COUNT(*) FROM (SELECT a.id FROM articles a {join_sql} "
+            f"WHERE {where_sql}{group_having})"
+        )
+        try:
+            total = self.conn.execute(count_sql, params).fetchone()[0]
+        except sqlite3.OperationalError:
+            return self.list_articles_filtered(q=None, tags=tags, view=view, limit=limit, offset=offset)
+
+        list_sql = (
+            f"SELECT a.* FROM articles a {join_sql} "
+            f"WHERE {where_sql}{group_having} "
+            f"ORDER BY a.synced_at DESC LIMIT ? OFFSET ?"
+        )
+        rows = self.conn.execute(list_sql, [*params, limit, offset]).fetchall()
+        return [dict(r) for r in rows], total
+
     def close(self):
         self.conn.close()
