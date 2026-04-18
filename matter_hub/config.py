@@ -5,6 +5,7 @@ Stores database in <project>/data/matter-hub.db.
 """
 
 import json
+import os
 from pathlib import Path
 
 DEFAULT_DIR = Path.home() / ".matter-hub"
@@ -25,5 +26,10 @@ def save_config(data: dict, path: Path = DEFAULT_CONFIG_PATH) -> None:
 
 
 def get_db_path() -> Path:
+    env = os.environ.get("MATTER_HUB_DB")
+    if env:
+        path = Path(env)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     return DATA_DIR / "matter-hub.db"
