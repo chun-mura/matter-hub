@@ -462,6 +462,59 @@ def import_json(file):
     db.close()
 
 
+@cli.group()
+def backfill():
+    """壊れたメタデータを再取得する"""
+    pass
+
+
+@backfill.command(name="reddit")
+@click.option("--dry-run", is_flag=True, help="更新せず対象のみ表示")
+def backfill_reddit(dry_run):
+    """Reddit記事で 'Please wait for verification' タイトルのものを再取得"""
+    from matter_hub.importer import fetch_article
+
+    db = get_db()
+    rows = db.conn.execute(
+        """SELECT * FROM articles
+           WHERE source = 'reddit'
+             AND (title LIKE 'Reddit - Please wait%'
+                  OR title LIKE '%Please wait for verification%')""",
+    ).fetchall()
+
+    if not rows:
+        console.print("[green]backfill対象の記事はありません[/green]")
+        db.close()
+        return
+
+    console.print(f"[yellow]{len(rows)} 件のReddit記事を再取得します[/yellow]")
+    updated = 0
+    failed = 0
+    for row in rows:
+        existing = dict(row)
+        url = existing["url"]
+        article = fetch_article(url, source="reddit", note=existing.get("note"))
+        if article["title"] == url or "Please wait" in article["title"]:
+            console.print(f"  [red]✗[/red] {url} → 再取得失敗")
+            failed += 1
+            continue
+
+        article["library_state"] = existing.get("library_state")
+
+        if dry_run:
+            console.print(f"  [cyan]→[/cyan] {article['title'][:60]}")
+        else:
+            db.upsert_article(article)
+            console.print(f"  [green]✓[/green] {article['title'][:60]}")
+            updated += 1
+
+    if dry_run:
+        console.print(f"[yellow]dry-run: {len(rows) - failed} 件が更新対象[/yellow]")
+    else:
+        console.print(f"[green]{updated} 件更新、{failed} 件失敗[/green]")
+    db.close()
+
+
 @cli.command()
 def stats():
     """興味の傾向を分析"""
