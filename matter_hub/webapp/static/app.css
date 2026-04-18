@@ -1,1 +1,6 @@
 /* Reserved for future overrides; Tailwind CDN handles most styling. */
+
+.article-row .swipe-surface {
+  touch-action: pan-y;
+  will-change: transform;
+}
