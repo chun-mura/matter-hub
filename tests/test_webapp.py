@@ -136,3 +136,24 @@ def test_restore_unknown_returns_404(tmp_path, monkeypatch):
     c = TestClient(create_app())
     r = c.post("/articles/missing/restore")
     assert r.status_code == 404
+
+
+def test_index_respects_view_param(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    c = TestClient(create_app())
+    r = c.get("/?view=archived")
+    assert r.status_code == 200
+    assert "Archived one" in r.text
+    assert "Python basics" not in r.text
+
+
+def test_index_respects_tags_param(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    c = TestClient(create_app())
+    r = c.get("/?tags=Python,AI")
+    assert "Python + AI" in r.text
+    assert "Rust ownership" not in r.text

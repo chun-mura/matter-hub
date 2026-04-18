@@ -18,11 +18,19 @@ def _parse_tags(tags: str) -> list[str]:
 
 
 @router.get("/", response_class=HTMLResponse)
-def index(request: Request) -> HTMLResponse:
+def index(
+    request: Request,
+    q: str = "",
+    tags: str = "",
+    view: str = "active",
+) -> HTMLResponse:
+    tag_list = _parse_tags(tags)
     db = _db()
     try:
-        tags = db.list_tags_filtered(view="active")
-        rows, total = db.list_articles_filtered(q=None, tags=[], view="active", limit=50, offset=0)
+        tag_pairs = db.list_tags_filtered(view=view)
+        rows, total = db.list_articles_filtered(
+            q=q or None, tags=tag_list, view=view, limit=PAGE_SIZE, offset=0
+        )
     finally:
         db.close()
     templates = request.app.state.templates
@@ -32,12 +40,12 @@ def index(request: Request) -> HTMLResponse:
         {
             "articles": rows,
             "total": total,
-            "tags_with_counts": tags,
-            "view": "active",
-            "q": "",
-            "selected_tags": [],
+            "tags_with_counts": tag_pairs,
+            "view": view,
+            "q": q,
+            "selected_tags": tag_list,
             "page": 1,
-            "has_more": total > 50,
+            "has_more": total > PAGE_SIZE,
         },
     )
 
