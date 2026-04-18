@@ -403,3 +403,17 @@ def test_list_tags_filtered_trash(tmp_path):
     tags = db.list_tags_filtered(view="trash")
     assert dict(tags) == {"Python": 1}  # only a5
     db.close()
+
+
+def test_is_deleted(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.upsert_article({
+        "id": "art1", "title": "T", "url": "https://e.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    assert db.is_deleted("art1") is False
+    db.set_deleted("art1", True)
+    assert db.is_deleted("art1") is True
+    assert db.is_deleted("missing") is False
+    db.close()

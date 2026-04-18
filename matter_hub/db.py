@@ -386,5 +386,11 @@ class Database:
         ).fetchall()
         return [(r["name"], r["cnt"]) for r in rows]
 
+    def is_deleted(self, article_id: str) -> bool:
+        row = self.conn.execute(
+            "SELECT deleted FROM articles WHERE id = ?", (article_id,)
+        ).fetchone()
+        return bool(row and row["deleted"])
+
     def close(self):
         self.conn.close()
