@@ -388,6 +388,28 @@ def test_list_filtered_query_and_tags_combined(tmp_path):
     db.close()
 
 
+def test_active_view_includes_null_and_queue_state(tmp_path):
+    db = Database(tmp_path / "t.db")
+    # Matter emits library_state in {None, 1, 2} for synced items. Only state=1 is archived.
+    samples = [
+        ("null_item",  None),
+        ("zero_item",  0),
+        ("queue_item", 2),
+        ("archive",    1),
+    ]
+    for aid, ls in samples:
+        db.upsert_article({
+            "id": aid, "title": aid, "url": f"https://e.com/{aid}",
+            "author": None, "publisher": None, "published_date": None,
+            "note": None, "library_state": ls,
+        })
+    active, _ = db.list_articles_filtered(q=None, tags=[], view="active", limit=50, offset=0)
+    archived, _ = db.list_articles_filtered(q=None, tags=[], view="archived", limit=50, offset=0)
+    assert {r["id"] for r in active} == {"null_item", "zero_item", "queue_item"}
+    assert {r["id"] for r in archived} == {"archive"}
+    db.close()
+
+
 def test_list_tags_filtered_active(tmp_path):
     db = Database(tmp_path / "t.db")
     _seed(db)

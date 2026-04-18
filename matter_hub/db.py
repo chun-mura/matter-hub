@@ -4,6 +4,18 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Matter library_state: 0 = library, 1 = archived, 2 = queue, 3 = deleted (sync hard-removes).
+# "archived" means only explicitly archived (state=1); NULL/0/2 are treated as active.
+_VIEW_CLAUSES = {
+    "active":   "a.deleted = 0 AND (a.library_state IS NULL OR a.library_state != 1)",
+    "archived": "a.deleted = 0 AND a.library_state = 1",
+    "trash":    "a.deleted = 1",
+}
+
+
+def _view_clause(view: str) -> str:
+    return _VIEW_CLAUSES.get(view, _VIEW_CLAUSES["active"])
+
 
 class Database:
     def __init__(self, db_path: Path):
@@ -328,12 +340,7 @@ class Database:
         limit: int,
         offset: int,
     ) -> tuple[list[dict], int]:
-        view_clauses = {
-            "active":   "a.deleted = 0 AND a.library_state = 0",
-            "archived": "a.deleted = 0 AND a.library_state != 0",
-            "trash":    "a.deleted = 1",
-        }
-        view_sql = view_clauses.get(view, view_clauses["active"])
+        view_sql = _view_clause(view)
 
         joins: list[str] = []
         where = [view_sql]
@@ -375,12 +382,7 @@ class Database:
         return [dict(r) for r in rows], total
 
     def list_tags_filtered(self, view: str) -> list[tuple[str, int]]:
-        view_clauses = {
-            "active":   "a.deleted = 0 AND a.library_state = 0",
-            "archived": "a.deleted = 0 AND a.library_state != 0",
-            "trash":    "a.deleted = 1",
-        }
-        view_sql = view_clauses.get(view, view_clauses["active"])
+        view_sql = _view_clause(view)
         rows = self.conn.execute(
             f"SELECT t.name, COUNT(DISTINCT a.id) AS cnt "
             f"FROM tags t JOIN articles a ON a.id = t.article_id "
