@@ -377,6 +377,17 @@ def test_list_filtered_pagination(tmp_path):
     db.close()
 
 
+def test_list_filtered_query_and_tags_combined(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(
+        q="Python", tags=["AI"], view="active", limit=50, offset=0
+    )
+    assert {r["id"] for r in rows} == {"a3"}
+    assert total == 1
+    db.close()
+
+
 def test_list_tags_filtered_active(tmp_path):
     db = Database(tmp_path / "t.db")
     _seed(db)

@@ -339,17 +339,20 @@ class Database:
         where = [view_sql]
         params: list = []
 
-        if q and q.strip():
-            joins.append("JOIN articles_fts f ON a.rowid = f.rowid")
-            where.append("articles_fts MATCH ?")
-            params.append(q)
-
+        # Order matters: SQLite binds placeholders positionally as they appear
+        # in the assembled SQL. Tag JOIN placeholders come first, then the FTS
+        # MATCH placeholder in WHERE, then LIMIT/OFFSET appended at the bottom.
         group_having = ""
         if tags:
             placeholders = ",".join(["?"] * len(tags))
             joins.append(f"JOIN tags t ON a.id = t.article_id AND t.name IN ({placeholders})")
             params.extend(tags)
             group_having = f" GROUP BY a.id HAVING COUNT(DISTINCT t.name) = {len(tags)}"
+
+        if q and q.strip():
+            joins.append("JOIN articles_fts f ON a.rowid = f.rowid")
+            where.append("articles_fts MATCH ?")
+            params.append(q)
 
         join_sql = " ".join(joins)
         where_sql = " AND ".join(where)
