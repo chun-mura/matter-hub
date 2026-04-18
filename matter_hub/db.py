@@ -307,5 +307,18 @@ class Database:
         ).fetchall()
         return [{"id": r["id"], "embedding": r["embedding"]} for r in rows]
 
+    def set_deleted(self, article_id: str, flag: bool) -> bool:
+        row = self.conn.execute(
+            "SELECT id FROM articles WHERE id = ?", (article_id,)
+        ).fetchone()
+        if not row:
+            return False
+        self.conn.execute(
+            "UPDATE articles SET deleted = ? WHERE id = ?",
+            (1 if flag else 0, article_id),
+        )
+        self.conn.commit()
+        return True
+
     def close(self):
         self.conn.close()

@@ -277,3 +277,25 @@ def test_migration_idempotent_when_deleted_exists(tmp_path):
     cols = [r[1] for r in db2.conn.execute("PRAGMA table_info(articles)").fetchall()]
     assert cols.count("deleted") == 1
     db2.close()
+
+
+def test_set_deleted_flips_flag(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1", "title": "T", "url": "https://e.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    assert db.set_deleted("art1", True) is True
+    row = db.conn.execute("SELECT deleted FROM articles WHERE id='art1'").fetchone()
+    assert row["deleted"] == 1
+    assert db.set_deleted("art1", False) is True
+    row = db.conn.execute("SELECT deleted FROM articles WHERE id='art1'").fetchone()
+    assert row["deleted"] == 0
+    db.close()
+
+
+def test_set_deleted_unknown_id_returns_false(tmp_path):
+    db = Database(tmp_path / "test.db")
+    assert db.set_deleted("missing", True) is False
+    db.close()
