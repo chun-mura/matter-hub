@@ -111,3 +111,28 @@ def test_delete_unknown_returns_404(tmp_path, monkeypatch):
     c = TestClient(create_app())
     r = c.post("/articles/missing/delete")
     assert r.status_code == 404
+
+
+def test_restore_clears_deleted_flag(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    db = Database(db_path)
+    db.set_deleted("a0", True)
+    db.close()
+    c = TestClient(create_app())
+    r = c.post("/articles/a0/restore")
+    assert r.status_code == 200
+    db = Database(db_path)
+    row = db.conn.execute("SELECT deleted FROM articles WHERE id='a0'").fetchone()
+    assert row["deleted"] == 0
+    db.close()
+
+
+def test_restore_unknown_returns_404(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    c = TestClient(create_app())
+    r = c.post("/articles/missing/restore")
+    assert r.status_code == 404
