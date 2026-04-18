@@ -375,3 +375,31 @@ def test_list_filtered_pagination(tmp_path):
     rows2, _ = db.list_articles_filtered(q=None, tags=[], view="active", limit=2, offset=2)
     assert len(rows2) == 1
     db.close()
+
+
+def test_list_tags_filtered_active(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    tags = db.list_tags_filtered(view="active")
+    as_dict = dict(tags)
+    assert as_dict["Python"] == 2    # a1, a3
+    assert as_dict["AI"] == 1        # a3
+    assert as_dict["Rust"] == 1      # a2
+    assert "Python" in as_dict       # a4 archived excluded, a5 trash excluded
+    db.close()
+
+
+def test_list_tags_filtered_archived(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    tags = db.list_tags_filtered(view="archived")
+    assert dict(tags) == {"Python": 1}  # only a4
+    db.close()
+
+
+def test_list_tags_filtered_trash(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    tags = db.list_tags_filtered(view="trash")
+    assert dict(tags) == {"Python": 1}  # only a5
+    db.close()

@@ -371,5 +371,20 @@ class Database:
         rows = self.conn.execute(list_sql, [*params, limit, offset]).fetchall()
         return [dict(r) for r in rows], total
 
+    def list_tags_filtered(self, view: str) -> list[tuple[str, int]]:
+        view_clauses = {
+            "active":   "a.deleted = 0 AND a.library_state = 0",
+            "archived": "a.deleted = 0 AND a.library_state != 0",
+            "trash":    "a.deleted = 1",
+        }
+        view_sql = view_clauses.get(view, view_clauses["active"])
+        rows = self.conn.execute(
+            f"SELECT t.name, COUNT(DISTINCT a.id) AS cnt "
+            f"FROM tags t JOIN articles a ON a.id = t.article_id "
+            f"WHERE {view_sql} "
+            f"GROUP BY t.name ORDER BY cnt DESC, t.name ASC"
+        ).fetchall()
+        return [(r["name"], r["cnt"]) for r in rows]
+
     def close(self):
         self.conn.close()
