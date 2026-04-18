@@ -5,6 +5,8 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      - ./matter_hub:/app/matter_hub
     environment:
       - MATTER_HUB_DB=/app/data/matter-hub.db
+    command: ["uvicorn", "matter_hub.webapp.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     restart: unless-stopped
