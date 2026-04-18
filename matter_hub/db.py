@@ -6,9 +6,15 @@ from pathlib import Path
 
 # Matter library_state: 0 = library, 1 = queue, 2 = archived, 3 = deleted (sync hard-removes).
 # "archived" means only explicitly archived (state=2); NULL/0/1 are treated as active.
+# Articles tagged "トレンド" are scoped to the trend view only and hidden from active/archived.
+_TREND_TAG = "トレンド"
+_HAS_TREND_TAG = (
+    f"EXISTS (SELECT 1 FROM tags tt WHERE tt.article_id = a.id AND tt.name = '{_TREND_TAG}')"
+)
 _VIEW_CLAUSES = {
-    "active":   "a.deleted = 0 AND (a.library_state IS NULL OR a.library_state != 2)",
-    "archived": "a.deleted = 0 AND a.library_state = 2",
+    "active":   f"a.deleted = 0 AND (a.library_state IS NULL OR a.library_state != 2) AND NOT {_HAS_TREND_TAG}",
+    "archived": f"a.deleted = 0 AND a.library_state = 2 AND NOT {_HAS_TREND_TAG}",
+    "trend":    f"a.deleted = 0 AND {_HAS_TREND_TAG}",
     "trash":    "a.deleted = 1",
 }
 

@@ -309,6 +309,8 @@ def _seed(db):
         ("a3", "Python + AI",     0, 0, ["Python", "AI"]),
         ("a4", "Old archived",    2, 0, ["Python"]),
         ("a5", "Trashed item",    0, 1, ["Python"]),
+        ("a6", "Trending post",   0, 0, ["トレンド"]),
+        ("a7", "Archived trend",  2, 0, ["トレンド"]),
     ]
     for aid, title, ls, deleted, tags in samples:
         db.upsert_article({
@@ -347,6 +349,18 @@ def test_list_filtered_trash_view(tmp_path):
     rows, total = db.list_articles_filtered(q=None, tags=[], view="trash", limit=50, offset=0)
     assert {r["id"] for r in rows} == {"a5"}
     assert total == 1
+    db.close()
+
+
+def test_list_filtered_trend_view_isolates_trend_tag(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    trend, _ = db.list_articles_filtered(q=None, tags=[], view="trend", limit=50, offset=0)
+    active, _ = db.list_articles_filtered(q=None, tags=[], view="active", limit=50, offset=0)
+    archived, _ = db.list_articles_filtered(q=None, tags=[], view="archived", limit=50, offset=0)
+    assert {r["id"] for r in trend} == {"a6", "a7"}
+    assert "a6" not in {r["id"] for r in active}
+    assert "a7" not in {r["id"] for r in archived}
     db.close()
 
 

@@ -6,6 +6,7 @@
     <div class="flex flex-wrap items-center gap-2 text-sm sm:text-sm">
       <a class="px-3 py-1.5 rounded text-sm {% if view == 'active' %}bg-blue-600 text-white{% else %}bg-gray-200{% endif %}" href="/?view=active">active</a>
       <a class="px-3 py-1.5 rounded text-sm {% if view == 'archived' %}bg-blue-600 text-white{% else %}bg-gray-200{% endif %}" href="/?view=archived">archived</a>
+      <a class="px-3 py-1.5 rounded text-sm {% if view == 'trend' %}bg-blue-600 text-white{% else %}bg-gray-200{% endif %}" href="/?view=trend">trend</a>
       <a class="px-3 py-1.5 rounded text-sm {% if view == 'trash' %}bg-blue-600 text-white{% else %}bg-gray-200{% endif %}" href="/?view=trash">trash</a>
       <span class="text-gray-500 text-sm">{{ total }} articles</span>
     </div>
