@@ -73,3 +73,27 @@ def articles(
             "has_more": offset + len(rows) < total,
         },
     )
+
+
+@router.get("/tags", response_class=HTMLResponse)
+def tags_partial(
+    request: Request,
+    view: str = "active",
+    tags: str = "",
+) -> HTMLResponse:
+    selected = _parse_tags(tags)
+    db = _db()
+    try:
+        pairs = db.list_tags_filtered(view=view)
+    finally:
+        db.close()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "_tag_filter.html",
+        {
+            "tags_with_counts": pairs,
+            "selected_tags": selected,
+            "view": view,
+        },
+    )

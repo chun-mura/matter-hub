@@ -77,3 +77,14 @@ def test_articles_partial_search(tmp_path, monkeypatch):
     r = c.get("/articles?view=active&q=Rust")
     assert "Rust ownership" in r.text
     assert "Python basics" not in r.text
+
+
+def test_tags_partial_active_view(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    c = TestClient(create_app())
+    r = c.get("/tags?view=active")
+    assert r.status_code == 200
+    assert "Python" in r.text
+    assert "Rust" in r.text
