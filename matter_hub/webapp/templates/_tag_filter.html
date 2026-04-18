@@ -1,0 +1,13 @@
+<ul class="space-y-1">
+  {% for name, cnt in tags_with_counts %}
+    <li>
+      <label class="flex items-center gap-1 cursor-pointer">
+        <input type="checkbox" value="{{ name }}"
+               {% if name in selected_tags %}checked{% endif %}
+               onchange="window.matterHub.toggleTag(this)">
+        <span>{{ name }}</span>
+        <span class="text-gray-500 ml-auto">{{ cnt }}</span>
+      </label>
+    </li>
+  {% endfor %}
+</ul>

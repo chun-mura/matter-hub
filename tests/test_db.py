@@ -241,3 +241,190 @@ def test_get_all_embeddings(tmp_path):
     assert results[0]["id"] in ("art1", "art2")
     assert len(np.frombuffer(results[0]["embedding"], dtype=np.float32)) == 768
     db.close()
+
+
+def test_deleted_column_added(tmp_path):
+    db = Database(tmp_path / "test.db")
+    cols = [r[1] for r in db.conn.execute("PRAGMA table_info(articles)").fetchall()]
+    assert "deleted" in cols
+    db.close()
+
+
+def test_deleted_column_default_zero(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1", "title": "T", "url": "https://e.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    row = db.conn.execute("SELECT deleted FROM articles WHERE id='art1'").fetchone()
+    assert row["deleted"] == 0
+    db.close()
+
+
+def test_wal_mode_enabled(tmp_path):
+    db = Database(tmp_path / "test.db")
+    mode = db.conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode.lower() == "wal"
+    db.close()
+
+
+def test_migration_idempotent_when_deleted_exists(tmp_path):
+    db_path = tmp_path / "test.db"
+    db1 = Database(db_path)
+    db1.close()
+    db2 = Database(db_path)
+    cols = [r[1] for r in db2.conn.execute("PRAGMA table_info(articles)").fetchall()]
+    assert cols.count("deleted") == 1
+    db2.close()
+
+
+def test_set_deleted_flips_flag(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1", "title": "T", "url": "https://e.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    assert db.set_deleted("art1", True) is True
+    row = db.conn.execute("SELECT deleted FROM articles WHERE id='art1'").fetchone()
+    assert row["deleted"] == 1
+    assert db.set_deleted("art1", False) is True
+    row = db.conn.execute("SELECT deleted FROM articles WHERE id='art1'").fetchone()
+    assert row["deleted"] == 0
+    db.close()
+
+
+def test_set_deleted_unknown_id_returns_false(tmp_path):
+    db = Database(tmp_path / "test.db")
+    assert db.set_deleted("missing", True) is False
+    db.close()
+
+
+def _seed(db):
+    samples = [
+        # (id, title, library_state, deleted, tags)
+        ("a1", "Python basics",  0, 0, ["Python"]),
+        ("a2", "Rust ownership",  0, 0, ["Rust"]),
+        ("a3", "Python + AI",     0, 0, ["Python", "AI"]),
+        ("a4", "Old archived",    1, 0, ["Python"]),
+        ("a5", "Trashed item",    0, 1, ["Python"]),
+    ]
+    for aid, title, ls, deleted, tags in samples:
+        db.upsert_article({
+            "id": aid, "title": title, "url": f"https://e.com/{aid}",
+            "author": None, "publisher": None, "published_date": None,
+            "note": None, "library_state": ls,
+        })
+        if deleted:
+            db.set_deleted(aid, True)
+        for t in tags:
+            db.add_tag(aid, t, "matter")
+
+
+def test_list_filtered_active_default(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(q=None, tags=[], view="active", limit=50, offset=0)
+    ids = {r["id"] for r in rows}
+    assert ids == {"a1", "a2", "a3"}
+    assert total == 3
+    db.close()
+
+
+def test_list_filtered_archived_view(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(q=None, tags=[], view="archived", limit=50, offset=0)
+    assert {r["id"] for r in rows} == {"a4"}
+    assert total == 1
+    db.close()
+
+
+def test_list_filtered_trash_view(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(q=None, tags=[], view="trash", limit=50, offset=0)
+    assert {r["id"] for r in rows} == {"a5"}
+    assert total == 1
+    db.close()
+
+
+def test_list_filtered_tags_and_semantics(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, _ = db.list_articles_filtered(q=None, tags=["Python", "AI"], view="active", limit=50, offset=0)
+    assert {r["id"] for r in rows} == {"a3"}
+    db.close()
+
+
+def test_list_filtered_query_fts(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, _ = db.list_articles_filtered(q="Rust", tags=[], view="active", limit=50, offset=0)
+    assert {r["id"] for r in rows} == {"a2"}
+    db.close()
+
+
+def test_list_filtered_pagination(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(q=None, tags=[], view="active", limit=2, offset=0)
+    assert len(rows) == 2
+    assert total == 3
+    rows2, _ = db.list_articles_filtered(q=None, tags=[], view="active", limit=2, offset=2)
+    assert len(rows2) == 1
+    db.close()
+
+
+def test_list_filtered_query_and_tags_combined(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    rows, total = db.list_articles_filtered(
+        q="Python", tags=["AI"], view="active", limit=50, offset=0
+    )
+    assert {r["id"] for r in rows} == {"a3"}
+    assert total == 1
+    db.close()
+
+
+def test_list_tags_filtered_active(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    tags = db.list_tags_filtered(view="active")
+    as_dict = dict(tags)
+    assert as_dict["Python"] == 2    # a1, a3
+    assert as_dict["AI"] == 1        # a3
+    assert as_dict["Rust"] == 1      # a2
+    assert "Python" in as_dict       # a4 archived excluded, a5 trash excluded
+    db.close()
+
+
+def test_list_tags_filtered_archived(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    tags = db.list_tags_filtered(view="archived")
+    assert dict(tags) == {"Python": 1}  # only a4
+    db.close()
+
+
+def test_list_tags_filtered_trash(tmp_path):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    tags = db.list_tags_filtered(view="trash")
+    assert dict(tags) == {"Python": 1}  # only a5
+    db.close()
+
+
+def test_is_deleted(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.upsert_article({
+        "id": "art1", "title": "T", "url": "https://e.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    assert db.is_deleted("art1") is False
+    db.set_deleted("art1", True)
+    assert db.is_deleted("art1") is True
+    assert db.is_deleted("missing") is False
+    db.close()

@@ -326,3 +326,52 @@ def test_search_semantic(tmp_path):
 
     assert result.exit_code == 0
     assert "Learning入門" in result.output
+
+
+def _fake_entry(article_id: str, title: str, library_state: int = 0) -> dict:
+    return {
+        "id": article_id,
+        "content": {
+            "title": title,
+            "url": f"https://e.com/{article_id}",
+            "author": None,
+            "publisher": None,
+            "publication_date": None,
+            "my_note": None,
+            "library": {"library_state": library_state},
+            "tags": [],
+            "my_annotations": [],
+        },
+    }
+
+
+def test_sync_skips_soft_deleted(tmp_path, monkeypatch):
+    db_path = tmp_path / "t.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+
+    db = Database(db_path)
+    db.upsert_article({
+        "id": "keep_me", "title": "Original", "url": "https://e.com/keep_me",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    db.set_deleted("keep_me", True)
+    db.close()
+
+    with patch("matter_hub.cli.get_client_from_config") as mock_client, \
+         patch("matter_hub.cli.load_config", return_value={"refresh_token": None}):
+        mock_client.return_value.fetch_all_articles.return_value = [
+            _fake_entry("keep_me", "Updated Title From Matter"),
+            _fake_entry("new_one", "Fresh"),
+        ]
+        runner = CliRunner()
+        result = runner.invoke(cli, ["sync"])
+        assert result.exit_code == 0, result.output
+
+    db = Database(db_path)
+    row = db.conn.execute("SELECT title, deleted FROM articles WHERE id='keep_me'").fetchone()
+    assert row["title"] == "Original"
+    assert row["deleted"] == 1
+    fresh = db.conn.execute("SELECT id FROM articles WHERE id='new_one'").fetchone()
+    assert fresh is not None
+    db.close()

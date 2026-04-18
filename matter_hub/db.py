@@ -9,6 +9,7 @@ class Database:
     def __init__(self, db_path: Path):
         self.conn = sqlite3.connect(str(db_path))
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self._migrate()
         self._init_tables()
 
@@ -41,6 +42,9 @@ class Database:
             if "source" not in columns:
                 cur.execute("ALTER TABLE articles ADD COLUMN source TEXT DEFAULT 'matter'")
                 self.conn.commit()
+            if "deleted" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN deleted INTEGER DEFAULT 0")
+                self.conn.commit()
 
     def _init_tables(self):
         cur = self.conn.cursor()
@@ -55,6 +59,7 @@ class Database:
                 note TEXT,
                 library_state INTEGER,
                 source TEXT DEFAULT 'matter',
+                deleted INTEGER DEFAULT 0,
                 synced_at TEXT
             );
 
@@ -301,6 +306,94 @@ class Database:
             "SELECT article_id as id, embedding FROM embeddings",
         ).fetchall()
         return [{"id": r["id"], "embedding": r["embedding"]} for r in rows]
+
+    def set_deleted(self, article_id: str, flag: bool) -> bool:
+        row = self.conn.execute(
+            "SELECT id FROM articles WHERE id = ?", (article_id,)
+        ).fetchone()
+        if not row:
+            return False
+        self.conn.execute(
+            "UPDATE articles SET deleted = ? WHERE id = ?",
+            (1 if flag else 0, article_id),
+        )
+        self.conn.commit()
+        return True
+
+    def list_articles_filtered(
+        self,
+        q: str | None,
+        tags: list[str],
+        view: str,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[dict], int]:
+        view_clauses = {
+            "active":   "a.deleted = 0 AND a.library_state = 0",
+            "archived": "a.deleted = 0 AND a.library_state != 0",
+            "trash":    "a.deleted = 1",
+        }
+        view_sql = view_clauses.get(view, view_clauses["active"])
+
+        joins: list[str] = []
+        where = [view_sql]
+        params: list = []
+
+        # Order matters: SQLite binds placeholders positionally as they appear
+        # in the assembled SQL. Tag JOIN placeholders come first, then the FTS
+        # MATCH placeholder in WHERE, then LIMIT/OFFSET appended at the bottom.
+        group_having = ""
+        if tags:
+            placeholders = ",".join(["?"] * len(tags))
+            joins.append(f"JOIN tags t ON a.id = t.article_id AND t.name IN ({placeholders})")
+            params.extend(tags)
+            group_having = f" GROUP BY a.id HAVING COUNT(DISTINCT t.name) = {len(tags)}"
+
+        if q and q.strip():
+            joins.append("JOIN articles_fts f ON a.rowid = f.rowid")
+            where.append("articles_fts MATCH ?")
+            params.append(q)
+
+        join_sql = " ".join(joins)
+        where_sql = " AND ".join(where)
+
+        count_sql = (
+            f"SELECT COUNT(*) FROM (SELECT a.id FROM articles a {join_sql} "
+            f"WHERE {where_sql}{group_having})"
+        )
+        try:
+            total = self.conn.execute(count_sql, params).fetchone()[0]
+        except sqlite3.OperationalError:
+            return self.list_articles_filtered(q=None, tags=tags, view=view, limit=limit, offset=offset)
+
+        list_sql = (
+            f"SELECT a.* FROM articles a {join_sql} "
+            f"WHERE {where_sql}{group_having} "
+            f"ORDER BY a.synced_at DESC LIMIT ? OFFSET ?"
+        )
+        rows = self.conn.execute(list_sql, [*params, limit, offset]).fetchall()
+        return [dict(r) for r in rows], total
+
+    def list_tags_filtered(self, view: str) -> list[tuple[str, int]]:
+        view_clauses = {
+            "active":   "a.deleted = 0 AND a.library_state = 0",
+            "archived": "a.deleted = 0 AND a.library_state != 0",
+            "trash":    "a.deleted = 1",
+        }
+        view_sql = view_clauses.get(view, view_clauses["active"])
+        rows = self.conn.execute(
+            f"SELECT t.name, COUNT(DISTINCT a.id) AS cnt "
+            f"FROM tags t JOIN articles a ON a.id = t.article_id "
+            f"WHERE {view_sql} "
+            f"GROUP BY t.name ORDER BY cnt DESC, t.name ASC"
+        ).fetchall()
+        return [(r["name"], r["cnt"]) for r in rows]
+
+    def is_deleted(self, article_id: str) -> bool:
+        row = self.conn.execute(
+            "SELECT deleted FROM articles WHERE id = ?", (article_id,)
+        ).fetchone()
+        return bool(row and row["deleted"])
 
     def close(self):
         self.conn.close()

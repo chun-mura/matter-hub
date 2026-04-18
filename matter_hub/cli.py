@@ -108,6 +108,9 @@ def sync(tag, embed, model):
                 deleted += 1
             continue
 
+        if db.is_deleted(article["id"]):
+            continue
+
         db.upsert_article(article)
 
         db.clear_matter_tags(article["id"])
