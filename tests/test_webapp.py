@@ -138,6 +138,54 @@ def test_restore_unknown_returns_404(tmp_path, monkeypatch):
     assert r.status_code == 404
 
 
+def test_archive_sets_library_state_archived(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    c = TestClient(create_app())
+    r = c.post("/articles/a0/archive")
+    assert r.status_code == 200
+    assert r.text.strip() == ""
+    db = Database(db_path)
+    row = db.conn.execute("SELECT library_state FROM articles WHERE id='a0'").fetchone()
+    assert row["library_state"] == 2
+    db.close()
+
+
+def test_archive_unknown_returns_404(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    c = TestClient(create_app())
+    r = c.post("/articles/missing/archive")
+    assert r.status_code == 404
+
+
+def test_unarchive_restores_library_state(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    db = Database(db_path)
+    db.set_library_state("a0", 2)
+    db.close()
+    c = TestClient(create_app())
+    r = c.post("/articles/a0/unarchive")
+    assert r.status_code == 200
+    db = Database(db_path)
+    row = db.conn.execute("SELECT library_state FROM articles WHERE id='a0'").fetchone()
+    assert row["library_state"] == 1
+    db.close()
+
+
+def test_unarchive_unknown_returns_404(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    _seed_many(db_path)
+    c = TestClient(create_app())
+    r = c.post("/articles/missing/unarchive")
+    assert r.status_code == 404
+
+
 def test_index_respects_view_param(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))

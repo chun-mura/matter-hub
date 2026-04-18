@@ -338,6 +338,19 @@ class Database:
         self.conn.commit()
         return True
 
+    def set_library_state(self, article_id: str, state: int) -> bool:
+        row = self.conn.execute(
+            "SELECT id FROM articles WHERE id = ?", (article_id,)
+        ).fetchone()
+        if not row:
+            return False
+        self.conn.execute(
+            "UPDATE articles SET library_state = ? WHERE id = ?",
+            (state, article_id),
+        )
+        self.conn.commit()
+        return True
+
     def list_articles_filtered(
         self,
         q: str | None,

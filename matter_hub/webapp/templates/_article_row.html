@@ -14,6 +14,15 @@
                 hx-post="/articles/{{ a.id }}/restore"
                 hx-target="#row-{{ a.id }}" hx-swap="outerHTML">restore</button>
       {% else %}
+        {% if view == 'archived' %}
+          <button class="px-3 py-1.5 bg-green-600 text-white rounded"
+                  hx-post="/articles/{{ a.id }}/unarchive"
+                  hx-target="#row-{{ a.id }}" hx-swap="outerHTML">unarchive</button>
+        {% elif view != 'trend' %}
+          <button class="px-3 py-1.5 bg-gray-600 text-white rounded"
+                  hx-post="/articles/{{ a.id }}/archive"
+                  hx-target="#row-{{ a.id }}" hx-swap="outerHTML">archive</button>
+        {% endif %}
         <button class="px-3 py-1.5 bg-red-600 text-white rounded"
                 hx-post="/articles/{{ a.id }}/delete"
                 hx-target="#row-{{ a.id }}" hx-swap="outerHTML"

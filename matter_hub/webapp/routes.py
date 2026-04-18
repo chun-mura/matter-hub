@@ -129,3 +129,27 @@ def restore_article(article_id: str) -> HTMLResponse:
     if not ok:
         raise HTTPException(status_code=404)
     return HTMLResponse(content="", status_code=200)
+
+
+@router.post("/articles/{article_id}/archive")
+def archive_article(article_id: str) -> HTMLResponse:
+    db = _db()
+    try:
+        ok = db.set_library_state(article_id, 2)
+    finally:
+        db.close()
+    if not ok:
+        raise HTTPException(status_code=404)
+    return HTMLResponse(content="", status_code=200)
+
+
+@router.post("/articles/{article_id}/unarchive")
+def unarchive_article(article_id: str) -> HTMLResponse:
+    db = _db()
+    try:
+        ok = db.set_library_state(article_id, 1)
+    finally:
+        db.close()
+    if not ok:
+        raise HTTPException(status_code=404)
+    return HTMLResponse(content="", status_code=200)
