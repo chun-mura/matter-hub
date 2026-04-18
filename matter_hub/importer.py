@@ -7,6 +7,9 @@ from urllib.parse import urlparse
 
 import httpx
 
+_REDDIT_UA = "neta-trend-collector/1.0 (trend analysis tool)"
+_REDDIT_PERMALINK_RE = re.compile(r"^/r/[^/]+/comments/[^/]+")
+
 # ソース種別の自動判定マッピング
 _SOURCE_PATTERNS = [
     (r"b\.hatena\.ne\.jp", "hatena"),
@@ -56,9 +59,56 @@ def _extract_meta(html: str, name: str) -> str | None:
     return None
 
 
+def _fetch_reddit_article(url: str, note: str | None) -> dict | None:
+    """Reddit permalink を JSON API で取得して article dict を返す。失敗時は None。"""
+    parsed = urlparse(url)
+    if not _REDDIT_PERMALINK_RE.match(parsed.path):
+        return None
+
+    json_url = f"https://www.reddit.com{parsed.path.rstrip('/')}/.json"
+    try:
+        resp = httpx.get(
+            json_url,
+            follow_redirects=True,
+            timeout=15,
+            headers={"User-Agent": _REDDIT_UA, "Accept": "application/json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        post = data[0]["data"]["children"][0]["data"]
+    except (httpx.HTTPError, ValueError, KeyError, IndexError):
+        return None
+
+    title = post.get("title") or url
+    author = post.get("author")
+    subreddit = post.get("subreddit")
+    publisher = f"reddit.com/r/{subreddit}" if subreddit else "reddit.com"
+    created = post.get("created_utc")
+    pub_date = None
+    if isinstance(created, (int, float)):
+        pub_date = datetime.fromtimestamp(created, tz=timezone.utc).strftime("%Y-%m-%d")
+
+    return {
+        "id": generate_id(url),
+        "title": title,
+        "url": url,
+        "author": author,
+        "publisher": publisher,
+        "published_date": pub_date,
+        "note": note,
+        "library_state": None,
+        "source": "reddit",
+    }
+
+
 def fetch_article(url: str, source: str | None = None, note: str | None = None) -> dict:
     """URLから記事情報を取得してarticle dictを返す。"""
     resolved_source = source or detect_source(url)
+
+    if resolved_source == "reddit":
+        article = _fetch_reddit_article(url, note)
+        if article is not None:
+            return article
 
     try:
         resp = httpx.get(
