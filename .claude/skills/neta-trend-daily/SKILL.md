@@ -233,6 +233,63 @@ matter-hub import url "URL1" "URL2" "URL3" --source hatena --tag "トレンド"
 1. [タイトル](RedditコメントページURL) (XXX ups, XXX comments) - r/opensource - 概要
 ```
 
+### 5. 要約する記事の選択
+
+レポート出力後、★★以上の注目記事を通し番号付きリストで提示する。
+
+```
+以下の注目記事を要約しますか？
+
+ 1. [★★★] GoogleのAIエージェント実践ガイド (hatena, 331 users)
+ 2. [★★★] Lambda vs ECS判断基準 (hatena, 94 users)
+ 3. [★★★] CPU-ZとHWMonitorにマルウェア混入 (hackernews, 341pt)
+ 4. [★★★] S3 Filesで消えるアーキテクチャ層 (zenn, 153 likes)
+ ...
+
+要約する番号を選んでください（例: 1,3,5）。「all」で全件、「skip」でスキップ:
+```
+
+AskUserQuestionツールで番号を入力してもらう。
+
+### 6. 選択した記事の要約
+
+ユーザーが選択した記事について、url-digestスキルと同じ手順で要約する:
+
+**URL種別ごとの取得方法**:
+
+- **通常記事**: WebFetchツールで本文を取得
+- **Hacker News**: Algolia API (`https://hn.algolia.com/api/v1/items/{item_id}`) で元記事URL+コメントを取得し、元記事はWebFetchで取得
+- **Reddit**: Bashツールでcurl + jqで投稿情報とコメントを取得
+- **X (Twitter)**: ブラウザ自動化ツール（claude-in-chrome）を使用
+
+**要約フォーマット**:
+
+各記事について以下を生成:
+- タイトル（英語の場合は日本語に翻訳）
+- コアメッセージを3-5行で要約
+- HN/Redditの場合はコミュニティの反応・インサイトも含める
+- **学習ポイント**: この記事からどんなIT知識が得られるかを1行で
+
+**出力先**: `data/digests/YYYYMMDD-digest.md` に保存（YYYYMMDDは実行日）
+
+```markdown
+# URL Digest: YYYY-MM-DD
+
+---
+
+## [記事タイトル]
+
+要約本文。コアメッセージを3-5行で記述。
+
+**学習ポイント**: ...
+
+URL
+
+---
+```
+
+ユーザーが「skip」を選んだ場合はこのステップをスキップし、レポート出力で終了する。
+
 ## 注意事項
 
 - WebFetchツールを使用して情報を取得（Reddit/Zenn/QiitaはBashツールでcurlを使用）
@@ -244,3 +301,4 @@ matter-hub import url "URL1" "URL2" "URL3" --source hatena --tag "トレンド"
 - 出力ファイルのYYYYMMDDは実行日の日付を使用
 - ★★以上の記事は必ず `matter-hub import url` でDB保存する
 - data/trends/ ディレクトリがなければ作成する
+- 要約ステップでは AskUserQuestion ツールで番号を選択してもらう
