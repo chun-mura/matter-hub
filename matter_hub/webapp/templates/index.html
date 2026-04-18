@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="max-w-6xl mx-auto p-4">
+  <header class="flex items-center justify-between border-b pb-2 mb-4">
+    <h1 class="text-xl font-semibold">Matter Hub</h1>
+    <div class="space-x-2 text-sm">
+      <a class="px-2 py-1 rounded {% if view == 'active' %}bg-blue-600 text-white{% else %}bg-gray-200{% endif %}" href="/?view=active">active</a>
+      <a class="px-2 py-1 rounded {% if view == 'archived' %}bg-blue-600 text-white{% else %}bg-gray-200{% endif %}" href="/?view=archived">archived</a>
+      <a class="px-2 py-1 rounded {% if view == 'trash' %}bg-blue-600 text-white{% else %}bg-gray-200{% endif %}" href="/?view=trash">trash</a>
+      <span class="text-gray-500 ml-2">{{ total }} articles</span>
+    </div>
+  </header>
+  <div class="grid grid-cols-4 gap-4">
+    <aside class="col-span-1">
+      <input type="text" placeholder="Search…" class="w-full border rounded px-2 py-1"
+             name="q" value="{{ q }}"
+             hx-get="/articles" hx-target="#article-list" hx-swap="innerHTML"
+             hx-trigger="keyup changed delay:300ms"
+             hx-include="[name=view],[name=tags]">
+      <input type="hidden" name="view" value="{{ view }}">
+      <input type="hidden" name="tags" value="{{ selected_tags|join(',') }}">
+      <div id="tag-filter" class="mt-4 text-sm">
+        {% include "_tag_filter.html" %}
+      </div>
+    </aside>
+    <section class="col-span-3">
+      <div id="article-list">
+        {% include "_article_list.html" %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

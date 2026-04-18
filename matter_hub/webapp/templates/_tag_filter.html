@@ -1,0 +1,5 @@
+<ul class="space-y-1">
+  {% for name, cnt in tags_with_counts %}
+    <li>{{ name }} <span class="text-gray-500">{{ cnt }}</span></li>
+  {% endfor %}
+</ul>
