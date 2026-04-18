@@ -8,4 +8,12 @@ window.matterHub = {
     if (!current.get("view")) current.set("view", "active");
     window.location.search = current.toString();
   },
+  toggleTagPanel(btn) {
+    const panel = document.getElementById("tag-filter");
+    if (!panel) return;
+    const open = panel.classList.toggle("hidden") === false;
+    btn.setAttribute("aria-expanded", String(open));
+    const chev = btn.querySelector(".tag-chevron");
+    if (chev) chev.textContent = open ? "▾" : "▸";
+  },
 };
