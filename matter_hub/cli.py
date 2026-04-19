@@ -8,7 +8,7 @@ import qrcode
 from rich.console import Console
 from rich.table import Table
 
-from matter_hub.api import MatterClient, parse_feed_entry
+from matter_hub.api import MatterClient
 from matter_hub.config import load_config, save_config, get_db_path
 from matter_hub.db import Database
 
@@ -68,164 +68,69 @@ def auth():
     sys.exit(1)
 
 
+def _console_log(msg: str, level: str = "info") -> None:
+    style = {"success": "green", "warn": "yellow", "error": "red"}.get(level)
+    if style:
+        console.print(f"[{style}]{msg}[/{style}]")
+    else:
+        console.print(msg)
+
+
 @cli.command()
 @click.option("--tag", is_flag=True, help="同期後にOllamaで自動タグ付けを実行")
 @click.option("--embed", is_flag=True, help="同期後にEmbeddingを生成")
 @click.option("--model", default="gemma3:4b", help="Ollamaモデル名（デフォルト: gemma3:4b）")
 def sync(tag, embed, model):
     """Matter APIから記事を同期"""
-    client = get_client_from_config()
+    from matter_hub.sync import fetch_entries_with_refresh, ingest_entries
 
+    client = get_client_from_config()
     try:
-        entries = client.fetch_all_articles()
-    except Exception as e:
-        config = load_config()
-        if config.get("refresh_token"):
-            try:
-                client.refresh_token = config["refresh_token"]
-                new_tokens = client.refresh_access_token()
-                save_config({
-                    "access_token": new_tokens["access_token"],
-                    "refresh_token": new_tokens["refresh_token"],
-                })
-                entries = client.fetch_all_articles()
-            except Exception:
-                console.print("[red]トークンの更新に失敗しました。`matter-hub auth` で再認証してください。[/red]")
-                sys.exit(1)
-        else:
-            raise
+        entries = fetch_entries_with_refresh(client)
+    except Exception:
+        console.print("[red]トークンの更新に失敗しました。`matter-hub auth` で再認証してください。[/red]")
+        sys.exit(1)
 
     db = get_db()
-    count = 0
-    deleted = 0
-
-    for entry in entries:
-        parsed = parse_feed_entry(entry)
-        article = parsed["article"]
-
-        if article.get("library_state") == 3:
-            if db.delete_article(article["id"]):
-                deleted += 1
-            continue
-
-        if db.is_deleted(article["id"]):
-            continue
-
-        db.upsert_article(article)
-
-        db.clear_matter_tags(article["id"])
-        for t in parsed["tags"]:
-            db.add_tag(article["id"], t["name"], "matter")
-
-        db.clear_highlights(article["id"])
-        for h in parsed["highlights"]:
-            db.add_highlight(article["id"], h["text"], h.get("note"), h.get("created_date"))
-
-        count += 1
-
-    console.print(f"[green]{count} 件の記事を同期しました[/green]")
-    if deleted:
-        console.print(f"[yellow]{deleted} 件の削除済み記事を除去しました[/yellow]")
-
-    if tag:
-        _run_auto_tag(db, ollama_model=model)
-
-    if embed:
-        _run_embed(db)
-
-    db.close()
+    try:
+        ingest_entries(db, entries, log=_console_log)
+        if tag:
+            _run_auto_tag(db, ollama_model=model)
+        if embed:
+            _run_embed(db)
+    finally:
+        db.close()
 
 
 def _ensure_ollama():
     """Ollamaが起動しているか確認し、停止中なら起動を提案する。"""
     import httpx
-    import subprocess
-    import platform
+    from matter_hub.ollama import get_base_url
+    from matter_hub.sync import ensure_ollama_noninteractive
+
+    base_url = get_base_url()
     try:
-        httpx.get("http://localhost:11434/api/tags", timeout=3)
+        httpx.get(f"{base_url}/api/tags", timeout=3)
         return True
     except (httpx.ConnectError, httpx.TimeoutException):
         pass
 
-    console.print("[yellow]Ollamaが起動していません。[/yellow]")
-    if click.confirm("Ollamaを起動しますか？"):
-        if platform.system() == "Darwin":
-            subprocess.Popen(["open", "-a", "Ollama"])
-        else:
-            subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        console.print("[yellow]Ollama起動中...[/yellow]")
-        import time
-        for _ in range(60):
-            time.sleep(1)
-            try:
-                httpx.get("http://localhost:11434/api/tags", timeout=3)
-                console.print("[green]Ollama起動完了[/green]")
-                return True
-            except (httpx.ConnectError, httpx.TimeoutException):
-                pass
-        console.print("[red]Ollamaの起動がタイムアウトしました。手動でOllamaアプリを起動してください。[/red]")
+    console.print(f"[yellow]Ollamaに接続できません ({base_url})[/yellow]")
+    if not click.confirm("Ollamaを起動しますか？"):
         return False
-    return False
+    return ensure_ollama_noninteractive(log=_console_log, auto_start=True)
 
 
 def _run_auto_tag(db: Database, ollama_model: str = "gemma3:4b"):
-    from matter_hub.ollama import tag_article_ollama
+    from matter_hub.sync import auto_tag_articles
 
-    if not _ensure_ollama():
-        return
-
-    articles = db.articles_without_ai_tags()
-    existing_tags = db.get_all_tag_names()
-
-    if not articles:
-        console.print("[green]タグ付け対象の記事はありません[/green]")
-        return
-
-    console.print(f"[yellow]{len(articles)} 件の記事にタグ付け中（Ollama: {ollama_model}）...[/yellow]")
-
-    for article in articles:
-        highlights = db.get_highlights(article["id"])
-        try:
-            tags = tag_article_ollama(article, highlights, existing_tags, model=ollama_model)
-        except Exception as e:
-            console.print(f"  [red]{article['title'][:40]}... → エラー: {e}[/red]")
-            continue
-        for tag_name in tags:
-            db.add_tag(article["id"], tag_name, "ai")
-            if tag_name not in existing_tags:
-                existing_tags.append(tag_name)
-        console.print(f"  {article['title'][:40]}... → {', '.join(tags) or '(タグなし)'}")
-
-    console.print("[green]タグ付け完了[/green]")
+    auto_tag_articles(db, _ensure_ollama, model=ollama_model, log=_console_log)
 
 
 def _run_embed(db: Database):
-    import numpy as np
-    from matter_hub.ollama import build_embedding_text, generate_embedding
+    from matter_hub.sync import embed_articles
 
-    if not _ensure_ollama():
-        return
-
-    articles = db.articles_without_embedding()
-    if not articles:
-        console.print("[green]Embedding生成対象の記事はありません[/green]")
-        return
-
-    console.print(f"[yellow]{len(articles)} 件の記事のEmbeddingを生成中...[/yellow]")
-
-    for article in articles:
-        tags = [t["name"] for t in db.get_tags(article["id"])]
-        highlights = db.get_highlights(article["id"])
-        text = build_embedding_text(article, tags, highlights)
-        try:
-            embedding = generate_embedding(text)
-            embedding_bytes = np.array(embedding, dtype=np.float32).tobytes()
-            db.save_embedding(article["id"], embedding_bytes)
-            console.print(f"  {article['title'][:50]}... → OK")
-        except Exception as e:
-            console.print(f"  [red]{article['title'][:50]}... → エラー: {e}[/red]")
-
-    console.print("[green]Embedding生成完了[/green]")
+    embed_articles(db, _ensure_ollama, log=_console_log)
 
 
 def _semantic_search(db: Database, query: str, top_n: int = 10) -> list[dict]:
