@@ -1,9 +1,14 @@
 """Ollama integration for auto-tagging and embedding generation."""
 
 import json
+import os
 import re
 
 import httpx
+
+
+def get_base_url() -> str:
+    return os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
 
 def build_prompt(article: dict, highlights: list[dict], existing_tags: list[str]) -> str:
@@ -55,11 +60,11 @@ def tag_article_ollama(
     highlights: list[dict],
     existing_tags: list[str],
     model: str = "gemma3:4b",
-    base_url: str = "http://localhost:11434",
+    base_url: str | None = None,
 ) -> list[str]:
     prompt = build_prompt(article, highlights, existing_tags)
     resp = httpx.post(
-        f"{base_url}/api/generate",
+        f"{base_url or get_base_url()}/api/generate",
         json={"model": model, "prompt": prompt, "stream": False},
         timeout=120,
     )
@@ -82,10 +87,10 @@ def build_embedding_text(article: dict, tags: list[str], highlights: list[dict])
 def generate_embedding(
     text: str,
     model: str = "nomic-embed-text",
-    base_url: str = "http://localhost:11434",
+    base_url: str | None = None,
 ) -> list[float]:
     resp = httpx.post(
-        f"{base_url}/api/embed",
+        f"{base_url or get_base_url()}/api/embed",
         json={"model": model, "input": text},
         timeout=60,
     )
