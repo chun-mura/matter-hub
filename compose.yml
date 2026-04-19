@@ -8,5 +8,9 @@ services:
       - ./matter_hub:/app/matter_hub
     environment:
       - MATTER_HUB_DB=/app/data/matter-hub.db
+      - MATTER_HUB_CONFIG=/app/data/config.json
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["uvicorn", "matter_hub.webapp.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     restart: unless-stopped

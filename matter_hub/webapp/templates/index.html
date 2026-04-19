@@ -10,6 +10,9 @@
       <a class="px-3 py-1.5 rounded text-sm {% if view == 'trash' %}bg-blue-600 text-white{% else %}bg-gray-200{% endif %}" href="/?view=trash">trash</a>
       <span class="text-gray-500 text-sm">{{ total }} articles</span>
     </div>
+    <div class="w-full">
+      {% include "_sync_status.html" %}
+    </div>
   </header>
   <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
     <aside class="md:col-span-1">

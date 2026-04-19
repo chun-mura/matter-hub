@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 
 from matter_hub.config import get_db_path
 from matter_hub.db import Database
+from matter_hub.webapp.sync_runner import runner as sync_runner
 
 router = APIRouter()
 
@@ -46,6 +47,7 @@ def index(
             "selected_tags": tag_list,
             "page": 1,
             "has_more": total > PAGE_SIZE,
+            "sync": sync_runner.snapshot(),
         },
     )
 
@@ -153,3 +155,23 @@ def unarchive_article(article_id: str) -> HTMLResponse:
     if not ok:
         raise HTTPException(status_code=404)
     return HTMLResponse(content="", status_code=200)
+
+
+def _sync_response(request: Request) -> HTMLResponse:
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "_sync_status.html",
+        {"sync": sync_runner.snapshot()},
+    )
+
+
+@router.get("/sync", response_class=HTMLResponse)
+def sync_status(request: Request) -> HTMLResponse:
+    return _sync_response(request)
+
+
+@router.post("/sync", response_class=HTMLResponse)
+def sync_start(request: Request) -> HTMLResponse:
+    sync_runner.start(tag=True, embed=True)
+    return _sync_response(request)
