@@ -1,4 +1,16 @@
 window.matterHub = {
+  initSystemTheme() {
+    if (this.systemThemeBound) return;
+    this.systemThemeBound = true;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const root = document.documentElement;
+    const applySystemTheme = (isDark) => {
+      root.classList.toggle("dark", isDark);
+      root.style.colorScheme = isDark ? "dark" : "light";
+    };
+    applySystemTheme(mediaQuery.matches);
+    mediaQuery.addEventListener("change", (ev) => applySystemTheme(ev.matches));
+  },
   toggleTag(checkbox) {
     const current = new URLSearchParams(window.location.search);
     const tags = new Set((current.get("tags") || "").split(",").filter(Boolean));
@@ -170,6 +182,11 @@ window.matterHub = {
     scope.querySelectorAll(".article-row").forEach(attachSwipe);
   }
 
-  document.addEventListener("DOMContentLoaded", () => bindAll(document));
-  document.body.addEventListener("htmx:afterSwap", (ev) => bindAll(ev.target));
+  document.addEventListener("DOMContentLoaded", () => {
+    window.matterHub.initSystemTheme();
+    bindAll(document);
+  });
+  document.body.addEventListener("htmx:afterSwap", (ev) => {
+    bindAll(ev.target);
+  });
 })();

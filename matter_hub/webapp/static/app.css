@@ -1,4 +1,7 @@
 /* Reserved for future overrides; Tailwind CDN handles most styling. */
+:root {
+  color-scheme: light dark;
+}
 
 .article-row .swipe-surface {
   touch-action: pan-y;

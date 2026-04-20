@@ -8,23 +8,23 @@
             class="px-3 py-1.5 rounded text-sm {% if running %}bg-gray-400 text-white cursor-not-allowed{% else %}bg-emerald-600 text-white hover:bg-emerald-700{% endif %}"
             {% if running %}disabled{% endif %}
             hx-post="/sync" hx-target="#sync-panel" hx-swap="outerHTML">
-      {% if running %}同期中…{% else %}sync + tag + embed{% endif %}
+      {% if running %}同期中…{% else %}sync{% endif %}
     </button>
     {% if status == 'ok' and sync.summary %}
-      <span class="text-xs text-emerald-700">
+      <span class="text-xs text-emerald-700 dark:text-emerald-400">
         done: {{ sync.summary.synced }} synced
         {%- if sync.summary.deleted %}, {{ sync.summary.deleted }} removed{% endif -%}
         {%- if sync.summary.tagged is not none %}, {{ sync.summary.tagged }} tagged{% endif -%}
         {%- if sync.summary.embedded is not none %}, {{ sync.summary.embedded }} embedded{% endif -%}
       </span>
     {% elif status == 'error' %}
-      <span class="text-xs text-red-600">error: {{ sync.error }}</span>
+      <span class="text-xs text-red-600 dark:text-red-400">error: {{ sync.error }}</span>
     {% endif %}
   </div>
   {% if sync.log %}
-    <details class="text-xs text-gray-600" {% if running %}open{% endif %}>
+    <details class="text-xs text-gray-600 dark:text-gray-300" {% if running %}open{% endif %}>
       <summary class="cursor-pointer select-none">log</summary>
-      <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap bg-gray-900 text-gray-100 rounded p-2">{% for line in sync.log %}{{ line }}
+      <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap bg-gray-900 dark:bg-gray-950 text-gray-100 rounded p-2">{% for line in sync.log %}{{ line }}
 {% endfor %}</pre>
     </details>
   {% endif %}

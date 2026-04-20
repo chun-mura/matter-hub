@@ -7,7 +7,7 @@
                {% if name in selected_tags %}checked{% endif %}
                onchange="window.matterHub.toggleTag(this)">
         <span class="truncate">{{ name }}</span>
-        <span class="text-gray-500 ml-auto text-sm md:text-xs">{{ cnt }}</span>
+        <span class="text-gray-500 dark:text-gray-400 ml-auto text-sm md:text-xs">{{ cnt }}</span>
       </label>
     </li>
   {% endfor %}

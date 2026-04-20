@@ -5,11 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Matter Hub</title>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    window.tailwind = window.tailwind || {};
+    window.tailwind.config = { darkMode: "class" };
+    (function () {
+      const root = document.documentElement;
+      const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+      const applySystemTheme = (isDark) => {
+        root.classList.toggle("dark", isDark);
+        root.style.colorScheme = isDark ? "dark" : "light";
+      };
+      applySystemTheme(systemDark.matches);
+    })();
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/static/app.js" defer></script>
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body class="bg-gray-50 text-gray-900 text-base">
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 text-base">
   {% block body %}{% endblock %}
 </body>
 </html>
