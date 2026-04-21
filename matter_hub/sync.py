@@ -144,6 +144,7 @@ def auto_tag_articles(
     log: Logger = _noop,
 ) -> int:
     from matter_hub.ollama import tag_article_ollama
+    from matter_hub.title_locale import display_title
 
     if not ensure_ollama():
         return 0
@@ -163,13 +164,13 @@ def auto_tag_articles(
         try:
             tags = tag_article_ollama(article, highlights, existing_tags, model=model)
         except Exception as e:
-            log(f"  {article['title'][:40]}... → エラー: {e}", level="error")
+            log(f"  {display_title(article)[:40]}... → エラー: {e}", level="error")
             continue
         for tag_name in tags:
             db.add_tag(article["id"], tag_name, "ai")
             if tag_name not in existing_tags:
                 existing_tags.append(tag_name)
-        log(f"  {article['title'][:40]}... → {', '.join(tags) or '(タグなし)'}")
+        log(f"  {display_title(article)[:40]}... → {', '.join(tags) or '(タグなし)'}")
         tagged += 1
 
     log("タグ付け完了", level="success")
@@ -183,6 +184,7 @@ def embed_articles(
 ) -> int:
     import numpy as np
     from matter_hub.ollama import build_embedding_text, generate_embedding
+    from matter_hub.title_locale import display_title
 
     if not ensure_ollama():
         return 0
@@ -203,18 +205,67 @@ def embed_articles(
             embedding = generate_embedding(text)
             embedding_bytes = np.array(embedding, dtype=np.float32).tobytes()
             db.save_embedding(article["id"], embedding_bytes)
-            log(f"  {article['title'][:50]}... → OK")
+            log(f"  {display_title(article)[:50]}... → OK")
             embedded += 1
         except Exception as e:
-            log(f"  {article['title'][:50]}... → エラー: {e}", level="error")
+            log(f"  {display_title(article)[:50]}... → エラー: {e}", level="error")
 
     log("Embedding生成完了", level="success")
     return embedded
 
 
+def translate_title_articles(
+    db: Database,
+    ensure_ollama: EnsureFn,
+    model: str = "gemma3:4b",
+    retranslate_all: bool = False,
+    log: Logger = _noop,
+) -> int:
+    from matter_hub.ollama import translate_title_ollama
+    from matter_hub.title_locale import display_title, looks_like_japanese
+
+    if not ensure_ollama():
+        return 0
+
+    articles = [a for a in db.list_articles() if not a.get("deleted")]
+    candidates: list[dict] = []
+    for a in articles:
+        title = (a.get("title") or "").strip()
+        if not title or looks_like_japanese(title):
+            continue
+        if retranslate_all:
+            candidates.append(a)
+        elif not a.get("title_ja") or (a.get("title_ja_from") != title):
+            candidates.append(a)
+
+    if not candidates:
+        log("タイトル翻訳対象の記事はありません", level="success")
+        return 0
+
+    log(f"{len(candidates)} 件のタイトルを日本語化中（Ollama: {model}）...", level="warn")
+
+    done = 0
+    for article in candidates:
+        title = (article.get("title") or "").strip()
+        try:
+            ja = translate_title_ollama(title, model=model)
+            db.update_title_translation(article["id"], ja, title)
+        except Exception as e:
+            log(f"  {title[:50]}... → エラー: {e}", level="error")
+            continue
+        disp = display_title({**article, "title_ja": ja})
+        log(f"  {title[:40]}... → {disp[:60]}")
+        done += 1
+
+    log("タイトル翻訳完了", level="success")
+    return done
+
+
 def run_sync(
     tag: bool = False,
     embed: bool = False,
+    translate_titles: bool = False,
+    retranslate_all: bool = False,
     model: str = "gemma3:4b",
     log: Logger = _noop,
     auto_start_ollama: bool = True,
@@ -227,9 +278,16 @@ def run_sync(
     db = Database(get_db_path())
     tagged = None
     embedded = None
+    titles_translated = None
     try:
         synced, deleted = ingest_entries(db, entries, log=log)
         ensure = lambda: ensure_ollama_noninteractive(log=log, auto_start=auto_start_ollama)
+        if retranslate_all:
+            translate_titles = True
+        if translate_titles:
+            titles_translated = translate_title_articles(
+                db, ensure, model=model, retranslate_all=retranslate_all, log=log
+            )
         if tag:
             tagged = auto_tag_articles(db, ensure, model=model, log=log)
         if embed:
@@ -242,4 +300,5 @@ def run_sync(
         "deleted": deleted,
         "tagged": tagged,
         "embedded": embedded,
+        "titles_translated": titles_translated,
     }

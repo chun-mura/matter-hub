@@ -79,10 +79,25 @@ def _console_log(msg: str, level: str = "info") -> None:
 @cli.command()
 @click.option("--tag", is_flag=True, help="同期後にOllamaで自動タグ付けを実行")
 @click.option("--embed", is_flag=True, help="同期後にEmbeddingを生成")
+@click.option(
+    "--translate-titles",
+    is_flag=True,
+    help="同期後にOllamaで非日本語タイトルを日本語化（原文は保持）",
+)
+@click.option(
+    "--retranslate-all",
+    is_flag=True,
+    help="既に訳があるタイトルも含めて再翻訳（--translate-titles が暗黙で有効）",
+)
 @click.option("--model", default="gemma3:4b", help="Ollamaモデル名（デフォルト: gemma3:4b）")
-def sync(tag, embed, model):
+def sync(tag, embed, translate_titles, retranslate_all, model):
     """Matter APIから記事を同期"""
-    from matter_hub.sync import fetch_entries_with_refresh, ingest_entries
+    from matter_hub.sync import (
+        fetch_entries_with_refresh,
+        ingest_entries,
+        translate_title_articles,
+        ensure_ollama_noninteractive,
+    )
 
     client = get_client_from_config()
     try:
@@ -94,6 +109,17 @@ def sync(tag, embed, model):
     db = get_db()
     try:
         ingest_entries(db, entries, log=_console_log)
+        if retranslate_all:
+            translate_titles = True
+        if translate_titles:
+            ensure = lambda: ensure_ollama_noninteractive(log=_console_log, auto_start=True)
+            translate_title_articles(
+                db,
+                ensure,
+                model=model,
+                retranslate_all=retranslate_all,
+                log=_console_log,
+            )
         if tag:
             _run_auto_tag(db, ollama_model=model)
         if embed:
@@ -491,7 +517,7 @@ def help_cmd(ctx, command_name):
 
     commands = [
         ("auth",        "QRコード認証でMatterにログイン"),
-        ("sync",        "Matter APIから記事を同期（--tag/--embed）"),
+        ("sync",        "Matter APIから記事を同期（--tag/--embed/--translate-titles）"),
         ("import url",  "URLから記事をインポート"),
         ("import json", "JSONファイルから一括インポート"),
         ("list",        "記事一覧を表示（--source対応）"),
@@ -514,6 +540,8 @@ def help_cmd(ctx, command_name):
 
 
 def _print_articles(articles: list[dict]):
+    from matter_hub.title_locale import display_title
+
     if not articles:
         console.print("[yellow]記事が見つかりませんでした[/yellow]")
         return
@@ -522,7 +550,7 @@ def _print_articles(articles: list[dict]):
         score = a.get("_score")
         score_str = f"[magenta]\\[{score:.2f}][/magenta] " if score is not None else ""
         source = a.get("source") or "matter"
-        console.print(f"{score_str}[cyan]{a['title']}[/cyan] [dim]({source})[/dim]")
+        console.print(f"{score_str}[cyan]{display_title(a)}[/cyan] [dim]({source})[/dim]")
         author = a.get("author") or "-"
         date = a.get("published_date") or "-"
         console.print(f"       著者: {author}  日付: {date}")
