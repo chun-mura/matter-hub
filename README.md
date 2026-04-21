@@ -2,6 +2,10 @@
 
 Matter (web.getmatter.com) に保存した記事をローカルで検索・タグ管理するCLIツール。
 
+# Matter API
+
+https://docs.getmatter.com/api を利用して、記事の取得・検索・タグ付けを行います。Ollamaを使ったAI自動タグ付けや、埋め込み生成による意味的な類似検索もサポートしています。
+
 ## セットアップ
 
 ```bash
