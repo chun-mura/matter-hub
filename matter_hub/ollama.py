@@ -12,6 +12,8 @@ def get_base_url() -> str:
 
 
 def build_prompt(article: dict, highlights: list[dict], existing_tags: list[str]) -> str:
+    from matter_hub.title_locale import display_title
+
     parts = [
         "以下の記事に3〜5個の日本語タグをつけてください。",
         "タグは短く（1〜3語）、カテゴリとして再利用しやすいものにしてください。",
@@ -21,7 +23,7 @@ def build_prompt(article: dict, highlights: list[dict], existing_tags: list[str]
         parts.append("できるだけ既存タグを再利用してください。")
     parts.append("JSON配列で返してください。例: [\"AI\", \"Web開発\"]")
     parts.append("")
-    parts.append(f"タイトル: {article['title']}")
+    parts.append(f"タイトル: {display_title(article)}")
     parts.append(f"URL: {article['url']}")
     if article.get("author"):
         parts.append(f"著者: {article['author']}")
@@ -73,7 +75,9 @@ def tag_article_ollama(
 
 
 def build_embedding_text(article: dict, tags: list[str], highlights: list[dict]) -> str:
-    parts = [f"タイトル: {article['title']}"]
+    from matter_hub.title_locale import display_title
+
+    parts = [f"タイトル: {display_title(article)}"]
     if article.get("author"):
         parts.append(f"著者: {article['author']}")
     if tags:
@@ -82,6 +86,29 @@ def build_embedding_text(article: dict, tags: list[str], highlights: list[dict])
         hl_texts = [h["text"] for h in highlights]
         parts.append(f"ハイライト: {' / '.join(hl_texts)}")
     return "\n".join(parts)
+
+
+def translate_title_ollama(
+    title: str,
+    model: str = "gemma3:4b",
+    base_url: str | None = None,
+) -> str:
+    """英語等のタイトルを自然な日本語の記事タイトルに翻訳。1行のみ返す。"""
+    prompt = (
+        "次の文字列はウェブ記事のタイトルです。自然な日本語のタイトルに翻訳してください。\n"
+        "説明・引用符・マークダウンは付けず、翻訳したタイトルのみを1行で出力してください。\n\n"
+        f"{title.strip()}"
+    )
+    resp = httpx.post(
+        f"{base_url or get_base_url()}/api/generate",
+        json={"model": model, "prompt": prompt, "stream": False},
+        timeout=90,
+    )
+    resp.raise_for_status()
+    out = (resp.json().get("response") or "").strip()
+    out = re.sub(r"^[`「『\"]+|[`」』\"]+$", "", out)
+    out = out.splitlines()[0].strip() if out else ""
+    return out or title.strip()
 
 
 def generate_embedding(

@@ -85,6 +85,42 @@ def test_build_embedding_text_minimal():
     assert "著者" not in text
 
 
+def test_build_prompt_uses_title_ja_when_present():
+    article = {
+        "title": "Rust ownership basics",
+        "title_ja": "Rustの所有権入門",
+        "url": "https://example.com",
+        "author": None,
+        "publisher": None,
+    }
+    prompt = build_prompt(article, [], [])
+    assert "Rustの所有権入門" in prompt
+    assert "Rust ownership basics" not in prompt
+
+
+def test_build_embedding_text_uses_title_ja_when_present():
+    article = {
+        "title": "ML Guide",
+        "title_ja": "機械学習ガイド",
+        "author": None,
+        "url": "https://example.com",
+    }
+    text = build_embedding_text(article, [], [])
+    assert "機械学習ガイド" in text
+    assert "ML Guide" not in text
+
+
+def test_translate_title_ollama(httpx_mock):
+    httpx_mock.add_response(
+        url="http://localhost:11434/api/generate",
+        json={"response": "機械学習の基礎"},
+    )
+    from matter_hub.ollama import translate_title_ollama
+
+    out = translate_title_ollama("Basics of Machine Learning")
+    assert "機械学習" in out
+
+
 def test_generate_embedding(httpx_mock):
     fake_embedding = [0.1] * 768
     httpx_mock.add_response(
