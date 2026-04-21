@@ -101,6 +101,40 @@ def test_sync_skips_deleted_articles(tmp_path):
     db.close()
 
 
+def test_sync_debug_updates_feed_prints_library_payload(tmp_path):
+    runner = CliRunner()
+
+    sample_entry = {
+        "id": "art1",
+        "content": {
+            "title": "Test Article",
+            "url": "https://example.com",
+            "author": {"any_name": "Alice"},
+            "publisher": {"any_name": "Tech"},
+            "publication_date": "2025-01-01",
+            "tags": [],
+            "my_annotations": [],
+            "my_note": {"note": "a note"},
+            "library": {"library_state": 1, "library_position": 12345},
+        },
+        "annotations": [],
+    }
+
+    mock_client = MagicMock()
+    mock_client.fetch_all_articles.return_value = [sample_entry]
+
+    db_path = tmp_path / "test.db"
+
+    with patch("matter_hub.cli.get_client_from_config", return_value=mock_client), \
+         patch("matter_hub.cli.get_db_path", return_value=db_path):
+        result = runner.invoke(cli, ["sync", "--debug-updates-feed"])
+
+    assert result.exit_code == 0
+    assert "updates_feed debug: 1 件取得" in result.output
+    assert '"library_state": 1' in result.output
+    assert '"library_position": 12345' in result.output
+
+
 def _seed_db(db_path):
     """Helper to create a seeded DB for CLI tests."""
     db = Database(db_path)

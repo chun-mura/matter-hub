@@ -1,5 +1,6 @@
 """CLI entry point for Matter Hub."""
 
+import json
 import sys
 import time
 
@@ -76,6 +77,21 @@ def _console_log(msg: str, level: str = "info") -> None:
         console.print(msg)
 
 
+def _debug_updates_feed(entries: list[dict], limit: int) -> None:
+    console.print(f"[yellow]updates_feed debug: {len(entries)} 件取得[/yellow]")
+    for index, entry in enumerate(entries[:limit], start=1):
+        content = entry.get("content") or {}
+        library = content.get("library")
+        summary = {
+            "entry_id": entry.get("id"),
+            "entry_keys": sorted(entry.keys()),
+            "content_keys": sorted(content.keys()),
+            "library": library,
+        }
+        console.print(f"[bold]--- updates_feed entry {index} ---[/bold]")
+        console.print(json.dumps(summary, ensure_ascii=False, indent=2))
+
+
 @cli.command()
 @click.option("--tag", is_flag=True, help="同期後にOllamaで自動タグ付けを実行")
 @click.option("--embed", is_flag=True, help="同期後にEmbeddingを生成")
@@ -90,7 +106,19 @@ def _console_log(msg: str, level: str = "info") -> None:
     help="既に訳があるタイトルも含めて再翻訳（--translate-titles が暗黙で有効）",
 )
 @click.option("--model", default="gemma3:4b", help="Ollamaモデル名（デフォルト: gemma3:4b）")
-def sync(tag, embed, translate_titles, retranslate_all, model):
+@click.option(
+    "--debug-updates-feed",
+    is_flag=True,
+    help="Matter updates_feed の先頭数件のキー構造と library 情報を表示",
+)
+@click.option(
+    "--debug-limit",
+    default=3,
+    show_default=True,
+    type=click.IntRange(min=1),
+    help="デバッグ表示する updates_feed 件数",
+)
+def sync(tag, embed, translate_titles, retranslate_all, model, debug_updates_feed, debug_limit):
     """Matter APIから記事を同期"""
     from matter_hub.sync import (
         fetch_entries_with_refresh,
@@ -105,6 +133,9 @@ def sync(tag, embed, translate_titles, retranslate_all, model):
     except Exception:
         console.print("[red]トークンの更新に失敗しました。`matter-hub auth` で再認証してください。[/red]")
         sys.exit(1)
+
+    if debug_updates_feed:
+        _debug_updates_feed(entries, debug_limit)
 
     db = get_db()
     try:
