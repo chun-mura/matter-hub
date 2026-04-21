@@ -101,6 +101,38 @@ def test_articles_partial_search(tmp_path, monkeypatch):
     assert "Python basics" not in r.text
 
 
+def test_articles_partial_orders_by_recently_created(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    db = Database(db_path)
+    db.upsert_article({
+        "id": "older",
+        "title": "Older Article",
+        "url": "https://e.com/older",
+        "author": None,
+        "publisher": None,
+        "published_date": "2026-04-20",
+        "note": None,
+        "library_state": 0,
+    })
+    db.upsert_article({
+        "id": "newer",
+        "title": "Newer Article",
+        "url": "https://e.com/newer",
+        "author": None,
+        "publisher": None,
+        "published_date": "2020-01-01",
+        "note": None,
+        "library_state": 0,
+    })
+    db.close()
+
+    c = TestClient(create_app())
+    r = c.get("/articles?view=active")
+    assert r.status_code == 200
+    assert r.text.index("Newer Article") < r.text.index("Older Article")
+
+
 def test_tags_partial_active_view(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))

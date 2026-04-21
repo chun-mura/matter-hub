@@ -331,6 +331,7 @@ def test_deleted_column_added(tmp_path):
     db = Database(tmp_path / "test.db")
     cols = [r[1] for r in db.conn.execute("PRAGMA table_info(articles)").fetchall()]
     assert "deleted" in cols
+    assert "created_at" in cols
     db.close()
 
 
@@ -360,7 +361,67 @@ def test_migration_idempotent_when_deleted_exists(tmp_path):
     db2 = Database(db_path)
     cols = [r[1] for r in db2.conn.execute("PRAGMA table_info(articles)").fetchall()]
     assert cols.count("deleted") == 1
+    assert cols.count("created_at") == 1
     db2.close()
+
+
+def test_upsert_preserves_created_at_for_existing_article(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1", "title": "Original", "url": "https://example.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 1,
+    })
+    first = db.conn.execute(
+        "SELECT created_at, synced_at FROM articles WHERE id = 'art1'"
+    ).fetchone()
+    db.upsert_article({
+        "id": "art1", "title": "Updated", "url": "https://example.com/updated",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 1,
+    })
+    second = db.conn.execute(
+        "SELECT created_at, synced_at FROM articles WHERE id = 'art1'"
+    ).fetchone()
+    assert second["created_at"] == first["created_at"]
+    assert second["synced_at"] >= first["synced_at"]
+    db.close()
+
+
+def test_list_articles_orders_by_recently_created(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "old", "title": "Old", "url": "https://example.com/old",
+        "author": None, "publisher": None, "published_date": "2026-04-20",
+        "note": None, "library_state": 1,
+    })
+    db.upsert_article({
+        "id": "new", "title": "New", "url": "https://example.com/new",
+        "author": None, "publisher": None, "published_date": "2020-01-01",
+        "note": None, "library_state": 1,
+    })
+    rows = db.list_articles()
+    assert [r["id"] for r in rows] == ["new", "old"]
+    db.close()
+
+
+def test_search_by_tag_orders_by_recently_created(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "old", "title": "Old", "url": "https://example.com/old",
+        "author": None, "publisher": None, "published_date": "2026-04-20",
+        "note": None, "library_state": 1,
+    })
+    db.add_tag("old", "AI", "ai")
+    db.upsert_article({
+        "id": "new", "title": "New", "url": "https://example.com/new",
+        "author": None, "publisher": None, "published_date": "2020-01-01",
+        "note": None, "library_state": 1,
+    })
+    db.add_tag("new", "AI", "ai")
+    rows = db.search_by_tag("AI")
+    assert [r["id"] for r in rows] == ["new", "old"]
+    db.close()
 
 
 def test_set_deleted_flips_flag(tmp_path):

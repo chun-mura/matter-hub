@@ -73,6 +73,13 @@ class Database:
             if "title_ja_from" not in columns:
                 cur.execute("ALTER TABLE articles ADD COLUMN title_ja_from TEXT")
                 self.conn.commit()
+            if "created_at" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN created_at TEXT")
+                cur.execute(
+                    "UPDATE articles SET created_at = COALESCE(synced_at, ?) WHERE created_at IS NULL",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+                self.conn.commit()
 
     def _init_tables(self):
         cur = self.conn.cursor()
@@ -90,6 +97,7 @@ class Database:
                 deleted INTEGER DEFAULT 0,
                 title_ja TEXT,
                 title_ja_from TEXT,
+                created_at TEXT,
                 synced_at TEXT
             );
 
@@ -152,15 +160,16 @@ class Database:
         source = article.get("source", "matter")
         aid = article["id"]
         existing = self.conn.execute(
-            "SELECT title, title_ja, title_ja_from FROM articles WHERE id = ?",
+            "SELECT title, title_ja, title_ja_from, created_at FROM articles WHERE id = ?",
             (aid,),
         ).fetchone()
 
-        merged = {**article, "source": source, "synced_at": now}
+        merged = {**article, "source": source, "synced_at": now, "created_at": now}
         merged.setdefault("title_ja", None)
         merged.setdefault("title_ja_from", None)
 
         if existing:
+            merged["created_at"] = existing["created_at"] or now
             if existing["title"] != article["title"]:
                 merged["title_ja"] = None
                 merged["title_ja_from"] = None
@@ -173,11 +182,11 @@ class Database:
         self.conn.execute(
             """INSERT INTO articles (
                    id, title, url, author, publisher, published_date, note, library_state,
-                   source, synced_at, title_ja, title_ja_from
+                   source, created_at, synced_at, title_ja, title_ja_from
                )
                VALUES (
                    :id, :title, :url, :author, :publisher, :published_date, :note, :library_state,
-                   :source, :synced_at, :title_ja, :title_ja_from
+                   :source, :created_at, :synced_at, :title_ja, :title_ja_from
                )
                ON CONFLICT(id) DO UPDATE SET
                  title=excluded.title, url=excluded.url, author=excluded.author,
@@ -265,7 +274,7 @@ class Database:
                 """SELECT a.* FROM articles a
                    JOIN tags t ON a.id = t.article_id
                    WHERE t.name = ? AND a.source = ?
-                   ORDER BY a.published_date DESC""",
+                   ORDER BY a.created_at DESC, a.synced_at DESC""",
                 (tag_name, source),
             ).fetchall()
         else:
@@ -273,7 +282,7 @@ class Database:
                 """SELECT a.* FROM articles a
                    JOIN tags t ON a.id = t.article_id
                    WHERE t.name = ?
-                   ORDER BY a.published_date DESC""",
+                   ORDER BY a.created_at DESC, a.synced_at DESC""",
                 (tag_name,),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -284,7 +293,7 @@ class Database:
         if source:
             sql += " WHERE source = ?"
             params.append(source)
-        sql += " ORDER BY synced_at DESC"
+        sql += " ORDER BY created_at DESC, synced_at DESC"
         if limit:
             sql += f" LIMIT {limit}"
         rows = self.conn.execute(sql, params).fetchall()
@@ -443,7 +452,7 @@ class Database:
         list_sql = (
             f"SELECT a.* FROM articles a {join_sql} "
             f"WHERE {where_sql}{group_having} "
-            f"ORDER BY a.synced_at DESC LIMIT ? OFFSET ?"
+            f"ORDER BY a.created_at DESC, a.synced_at DESC LIMIT ? OFFSET ?"
         )
         rows = self.conn.execute(list_sql, [*params, limit, offset]).fetchall()
         return [dict(r) for r in rows], total
