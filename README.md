@@ -12,6 +12,34 @@ cd /path/to/matter-hub
 uv venv && uv pip install -e .
 ```
 
+## Ollamaでのモデルインストール
+
+`sync --tag`（自動タグ付け）や `sync --embed`（埋め込み生成）、意味的な類似検索を使う場合は、[Ollama](https://ollama.com/) をインストールし、次のモデルを取得してください。
+
+1. **Ollama を起動する**  
+   macOS ではメニューバーの Ollama アプリを起動するか、ターミナルで `ollama serve` を実行します。
+
+2. **必要なモデルをダウンロードする**（別ターミナルで実行可）
+
+```bash
+# 自動タグ付け（デフォルトの --model と一致）
+ollama pull gemma3:4b
+
+# 埋め込み生成・類似検索（デフォルトの embedding モデル）
+ollama pull nomic-embed-text
+```
+
+- タグ付けだけなら `gemma3:4b` のみで構いません。`--model` で別モデルを指定した場合は、その名前で `ollama pull <モデル名>` してください。
+- 埋め込み・類似検索を使う場合は `nomic-embed-text` が必要です。
+
+3. **確認**（任意）
+
+```bash
+ollama list
+```
+
+別ホストの Ollama を使う場合は環境変数 `OLLAMA_BASE_URL`（例: `http://localhost:11434`）を設定します。
+
 ## 使い方
 
 ```bash
