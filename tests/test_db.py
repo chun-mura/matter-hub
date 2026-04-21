@@ -91,6 +91,90 @@ def test_fts_search(tmp_path):
     db.close()
 
 
+def test_fts_search_matches_title_ja(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1",
+        "title": "ML Guide",
+        "url": "https://example.com",
+        "author": None,
+        "publisher": None,
+        "published_date": None,
+        "note": None,
+        "library_state": 1,
+    })
+    db.update_title_translation("art1", "機械学習ガイド", "ML Guide")
+    results = db.search("機械学習")
+    assert len(results) == 1
+    assert results[0]["id"] == "art1"
+    db.close()
+
+
+def test_upsert_preserves_title_ja_when_title_unchanged(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "x1",
+        "title": "Same Title",
+        "url": "https://a.com",
+        "author": None,
+        "publisher": None,
+        "published_date": None,
+        "note": None,
+        "library_state": 0,
+    })
+    db.update_title_translation("x1", "同じタイトル", "Same Title")
+    db.upsert_article({
+        "id": "x1",
+        "title": "Same Title",
+        "url": "https://b.com",
+        "author": None,
+        "publisher": None,
+        "published_date": None,
+        "note": None,
+        "library_state": 0,
+    })
+    row = db.conn.execute(
+        "SELECT title, title_ja, title_ja_from, url FROM articles WHERE id='x1'"
+    ).fetchone()
+    assert row["title"] == "Same Title"
+    assert row["title_ja"] == "同じタイトル"
+    assert row["title_ja_from"] == "Same Title"
+    assert row["url"] == "https://b.com"
+    db.close()
+
+
+def test_upsert_clears_title_ja_when_title_changes(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "x1",
+        "title": "Old",
+        "url": "https://a.com",
+        "author": None,
+        "publisher": None,
+        "published_date": None,
+        "note": None,
+        "library_state": 0,
+    })
+    db.update_title_translation("x1", "旧", "Old")
+    db.upsert_article({
+        "id": "x1",
+        "title": "New Title",
+        "url": "https://a.com",
+        "author": None,
+        "publisher": None,
+        "published_date": None,
+        "note": None,
+        "library_state": 0,
+    })
+    row = db.conn.execute(
+        "SELECT title, title_ja, title_ja_from FROM articles WHERE id='x1'"
+    ).fetchone()
+    assert row["title"] == "New Title"
+    assert row["title_ja"] is None
+    assert row["title_ja_from"] is None
+    db.close()
+
+
 def test_search_by_tag(tmp_path):
     db = Database(tmp_path / "test.db")
     db.upsert_article({

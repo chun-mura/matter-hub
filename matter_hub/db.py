@@ -35,11 +35,15 @@ class Database:
         """スキーマのマイグレーション。"""
         cur = self.conn.cursor()
 
-        # FTSテーブルがtrigram以外なら再作成
+        # FTS: trigram 未対応、または title_ja 列未対応なら再作成
         row = cur.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='articles_fts'"
         ).fetchone()
-        if row and "trigram" not in row[0]:
+        fts_sql = row[0] if row and row[0] else ""
+        fts_outdated = bool(fts_sql) and (
+            "trigram" not in fts_sql or "title_ja" not in fts_sql
+        )
+        if fts_outdated:
             cur.executescript("""
                 DROP TRIGGER IF EXISTS articles_ai;
                 DROP TRIGGER IF EXISTS articles_ad;
@@ -63,6 +67,12 @@ class Database:
             if "deleted" not in columns:
                 cur.execute("ALTER TABLE articles ADD COLUMN deleted INTEGER DEFAULT 0")
                 self.conn.commit()
+            if "title_ja" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN title_ja TEXT")
+                self.conn.commit()
+            if "title_ja_from" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN title_ja_from TEXT")
+                self.conn.commit()
 
     def _init_tables(self):
         cur = self.conn.cursor()
@@ -78,6 +88,8 @@ class Database:
                 library_state INTEGER,
                 source TEXT DEFAULT 'matter',
                 deleted INTEGER DEFAULT 0,
+                title_ja TEXT,
+                title_ja_from TEXT,
                 synced_at TEXT
             );
 
@@ -97,26 +109,26 @@ class Database:
             );
 
             CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
-                title, author, publisher, note,
+                title, title_ja, author, publisher, note,
                 content='articles', content_rowid='rowid',
                 tokenize='trigram'
             );
 
             CREATE TRIGGER IF NOT EXISTS articles_ai AFTER INSERT ON articles BEGIN
-                INSERT INTO articles_fts(rowid, title, author, publisher, note)
-                VALUES (new.rowid, new.title, new.author, new.publisher, new.note);
+                INSERT INTO articles_fts(rowid, title, title_ja, author, publisher, note)
+                VALUES (new.rowid, new.title, new.title_ja, new.author, new.publisher, new.note);
             END;
 
             CREATE TRIGGER IF NOT EXISTS articles_ad AFTER DELETE ON articles BEGIN
-                INSERT INTO articles_fts(articles_fts, rowid, title, author, publisher, note)
-                VALUES ('delete', old.rowid, old.title, old.author, old.publisher, old.note);
+                INSERT INTO articles_fts(articles_fts, rowid, title, title_ja, author, publisher, note)
+                VALUES ('delete', old.rowid, old.title, old.title_ja, old.author, old.publisher, old.note);
             END;
 
             CREATE TRIGGER IF NOT EXISTS articles_au AFTER UPDATE ON articles BEGIN
-                INSERT INTO articles_fts(articles_fts, rowid, title, author, publisher, note)
-                VALUES ('delete', old.rowid, old.title, old.author, old.publisher, old.note);
-                INSERT INTO articles_fts(rowid, title, author, publisher, note)
-                VALUES (new.rowid, new.title, new.author, new.publisher, new.note);
+                INSERT INTO articles_fts(articles_fts, rowid, title, title_ja, author, publisher, note)
+                VALUES ('delete', old.rowid, old.title, old.title_ja, old.author, old.publisher, old.note);
+                INSERT INTO articles_fts(rowid, title, title_ja, author, publisher, note)
+                VALUES (new.rowid, new.title, new.title_ja, new.author, new.publisher, new.note);
             END;
         """)
         cur.execute("""
@@ -129,8 +141,8 @@ class Database:
 
         if self._needs_fts_rebuild:
             self.conn.execute("""
-                INSERT INTO articles_fts(rowid, title, author, publisher, note)
-                SELECT rowid, title, author, publisher, note FROM articles
+                INSERT INTO articles_fts(rowid, title, title_ja, author, publisher, note)
+                SELECT rowid, title, title_ja, author, publisher, note FROM articles
             """)
             self.conn.commit()
             self._needs_fts_rebuild = False
@@ -138,16 +150,52 @@ class Database:
     def upsert_article(self, article: dict) -> None:
         now = datetime.now(timezone.utc).isoformat()
         source = article.get("source", "matter")
+        aid = article["id"]
+        existing = self.conn.execute(
+            "SELECT title, title_ja, title_ja_from FROM articles WHERE id = ?",
+            (aid,),
+        ).fetchone()
+
+        merged = {**article, "source": source, "synced_at": now}
+        merged.setdefault("title_ja", None)
+        merged.setdefault("title_ja_from", None)
+
+        if existing:
+            if existing["title"] != article["title"]:
+                merged["title_ja"] = None
+                merged["title_ja_from"] = None
+            else:
+                if "title_ja" not in article:
+                    merged["title_ja"] = existing["title_ja"]
+                if "title_ja_from" not in article:
+                    merged["title_ja_from"] = existing["title_ja_from"]
+
         self.conn.execute(
-            """INSERT INTO articles (id, title, url, author, publisher, published_date, note, library_state, source, synced_at)
-               VALUES (:id, :title, :url, :author, :publisher, :published_date, :note, :library_state, :source, :synced_at)
+            """INSERT INTO articles (
+                   id, title, url, author, publisher, published_date, note, library_state,
+                   source, synced_at, title_ja, title_ja_from
+               )
+               VALUES (
+                   :id, :title, :url, :author, :publisher, :published_date, :note, :library_state,
+                   :source, :synced_at, :title_ja, :title_ja_from
+               )
                ON CONFLICT(id) DO UPDATE SET
                  title=excluded.title, url=excluded.url, author=excluded.author,
                  publisher=excluded.publisher, published_date=excluded.published_date,
-                 note=excluded.note, library_state=excluded.library_state, source=excluded.source, synced_at=excluded.synced_at""",
-            {**article, "source": source, "synced_at": now},
+                 note=excluded.note, library_state=excluded.library_state,
+                 source=excluded.source, synced_at=excluded.synced_at,
+                 title_ja=excluded.title_ja, title_ja_from=excluded.title_ja_from""",
+            merged,
         )
         self.conn.commit()
+
+    def update_title_translation(self, article_id: str, title_ja: str, title_ja_from: str) -> bool:
+        cur = self.conn.execute(
+            "UPDATE articles SET title_ja = ?, title_ja_from = ? WHERE id = ?",
+            (title_ja, title_ja_from, article_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
 
     def add_tag(self, article_id: str, name: str, source: str) -> None:
         existing = self.conn.execute(
