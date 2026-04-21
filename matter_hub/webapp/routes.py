@@ -173,5 +173,5 @@ def sync_status(request: Request) -> HTMLResponse:
 
 @router.post("/sync", response_class=HTMLResponse)
 def sync_start(request: Request) -> HTMLResponse:
-    sync_runner.start(tag=True, embed=True)
+    sync_runner.start(tag=True, embed=True, translate_titles=True, retranslate_all=False)
     return _sync_response(request)

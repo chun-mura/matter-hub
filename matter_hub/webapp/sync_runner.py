@@ -43,7 +43,14 @@ class SyncRunner:
             "error": self._error,
         }
 
-    def start(self, tag: bool = True, embed: bool = True, model: str = "gemma3:4b") -> bool:
+    def start(
+        self,
+        tag: bool = True,
+        embed: bool = True,
+        model: str = "gemma3:4b",
+        translate_titles: bool = True,
+        retranslate_all: bool = False,
+    ) -> bool:
         with self._lock:
             if self._status == "running":
                 return False
@@ -64,6 +71,8 @@ class SyncRunner:
                 summary = run_sync(
                     tag=tag,
                     embed=embed,
+                    translate_titles=translate_titles,
+                    retranslate_all=retranslate_all,
                     model=model,
                     log=_append,
                     auto_start_ollama=False,

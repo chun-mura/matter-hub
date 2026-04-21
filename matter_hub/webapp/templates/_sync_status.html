@@ -3,7 +3,7 @@
 <div id="sync-panel"
      class="flex flex-col gap-1 text-sm"
      {% if running %}hx-get="/sync" hx-trigger="every 2s" hx-swap="outerHTML" hx-target="#sync-panel"{% endif %}>
-  <div class="flex items-center gap-2">
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
     <button type="button"
             class="px-3 py-1.5 rounded text-sm {% if running %}bg-gray-400 text-white cursor-not-allowed{% else %}bg-emerald-600 text-white hover:bg-emerald-700{% endif %}"
             {% if running %}disabled{% endif %}
@@ -16,6 +16,7 @@
         {%- if sync.summary.deleted %}, {{ sync.summary.deleted }} removed{% endif -%}
         {%- if sync.summary.tagged is not none %}, {{ sync.summary.tagged }} tagged{% endif -%}
         {%- if sync.summary.embedded is not none %}, {{ sync.summary.embedded }} embedded{% endif -%}
+        {%- if sync.summary.titles_translated is not none %}, {{ sync.summary.titles_translated }} titles→JA{% endif -%}
       </span>
     {% elif status == 'error' %}
       <span class="text-xs text-red-600 dark:text-red-400">error: {{ sync.error }}</span>

@@ -28,6 +28,28 @@ def test_index_returns_html(client):
     assert "Matter Hub" in r.text
 
 
+def test_index_shows_title_ja_when_set(tmp_path, monkeypatch):
+    db_path = tmp_path / "web2.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    db = Database(db_path)
+    db.upsert_article({
+        "id": "a1",
+        "title": "Hello World",
+        "url": "https://e.com/a1",
+        "author": None,
+        "publisher": None,
+        "published_date": None,
+        "note": None,
+        "library_state": 0,
+    })
+    db.update_title_translation("a1", "こんにちは世界", "Hello World")
+    db.close()
+    r = TestClient(create_app()).get("/")
+    assert r.status_code == 200
+    assert "こんにちは世界" in r.text
+    assert "Hello World" not in r.text
+
+
 def _seed_many(db_path):
     db = Database(db_path)
     for i, (title, tags, ls) in enumerate([
