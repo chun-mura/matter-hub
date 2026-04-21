@@ -332,6 +332,7 @@ def test_deleted_column_added(tmp_path):
     cols = [r[1] for r in db.conn.execute("PRAGMA table_info(articles)").fetchall()]
     assert "deleted" in cols
     assert "created_at" in cols
+    assert "queue_order" in cols
     db.close()
 
 
@@ -362,6 +363,7 @@ def test_migration_idempotent_when_deleted_exists(tmp_path):
     cols = [r[1] for r in db2.conn.execute("PRAGMA table_info(articles)").fetchall()]
     assert cols.count("deleted") == 1
     assert cols.count("created_at") == 1
+    assert cols.count("queue_order") == 1
     db2.close()
 
 
@@ -388,38 +390,55 @@ def test_upsert_preserves_created_at_for_existing_article(tmp_path):
     db.close()
 
 
-def test_list_articles_orders_by_recently_created(tmp_path):
+def test_list_articles_orders_by_queue_order(tmp_path):
     db = Database(tmp_path / "test.db")
     db.upsert_article({
         "id": "old", "title": "Old", "url": "https://example.com/old",
         "author": None, "publisher": None, "published_date": "2026-04-20",
-        "note": None, "library_state": 1,
+        "note": None, "library_state": 1, "queue_order": 10,
     })
     db.upsert_article({
         "id": "new", "title": "New", "url": "https://example.com/new",
         "author": None, "publisher": None, "published_date": "2020-01-01",
-        "note": None, "library_state": 1,
+        "note": None, "library_state": 1, "queue_order": 20,
     })
     rows = db.list_articles()
     assert [r["id"] for r in rows] == ["new", "old"]
     db.close()
 
 
-def test_search_by_tag_orders_by_recently_created(tmp_path):
+def test_search_by_tag_orders_by_queue_order(tmp_path):
     db = Database(tmp_path / "test.db")
     db.upsert_article({
         "id": "old", "title": "Old", "url": "https://example.com/old",
         "author": None, "publisher": None, "published_date": "2026-04-20",
-        "note": None, "library_state": 1,
+        "note": None, "library_state": 1, "queue_order": 10,
     })
     db.add_tag("old", "AI", "ai")
     db.upsert_article({
         "id": "new", "title": "New", "url": "https://example.com/new",
         "author": None, "publisher": None, "published_date": "2020-01-01",
-        "note": None, "library_state": 1,
+        "note": None, "library_state": 1, "queue_order": 20,
     })
     db.add_tag("new", "AI", "ai")
     rows = db.search_by_tag("AI")
+    assert [r["id"] for r in rows] == ["new", "old"]
+    db.close()
+
+
+def test_list_articles_falls_back_to_created_at_when_queue_order_missing(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "old", "title": "Old", "url": "https://example.com/old",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    db.upsert_article({
+        "id": "new", "title": "New", "url": "https://example.com/new",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    rows = db.list_articles()
     assert [r["id"] for r in rows] == ["new", "old"]
     db.close()
 

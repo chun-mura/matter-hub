@@ -21,6 +21,7 @@ def parse_feed_entry(entry: dict) -> dict:
         "published_date": content.get("publication_date"),
         "note": note_obj.get("note") if note_obj else None,
         "library_state": library_obj["library_state"] if library_obj else None,
+        "queue_order": library_obj.get("queue_order") if library_obj else None,
     }
 
     tags = [

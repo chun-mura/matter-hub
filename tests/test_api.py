@@ -19,7 +19,7 @@ SAMPLE_FEED_ENTRY = {
             {"text": "highlighted text", "note": "my note", "created_date": "2025-01-16", "word_start": 0, "word_end": 10}
         ],
         "my_note": {"note": "article note"},
-        "library": {"library_state": 1},
+        "library": {"library_state": 1, "queue_order": 12345},
     },
     "annotations": [],
 }
@@ -49,6 +49,7 @@ def test_parse_feed_entry():
     assert result["article"]["publisher"] == "TechBlog"
     assert result["article"]["url"] == "https://example.com/article"
     assert result["article"]["library_state"] == 1
+    assert result["article"]["queue_order"] == 12345
     assert result["article"]["note"] == "article note"
     assert len(result["tags"]) == 1
     assert result["tags"][0]["name"] == "tech"
@@ -81,6 +82,7 @@ def test_parse_feed_entry_null_fields():
     assert result["article"]["author"] is None
     assert result["article"]["publisher"] is None
     assert result["article"]["library_state"] is None
+    assert result["article"]["queue_order"] is None
     assert result["article"]["note"] is None
 
 

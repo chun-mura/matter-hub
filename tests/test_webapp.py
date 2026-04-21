@@ -101,7 +101,7 @@ def test_articles_partial_search(tmp_path, monkeypatch):
     assert "Python basics" not in r.text
 
 
-def test_articles_partial_orders_by_recently_created(tmp_path, monkeypatch):
+def test_articles_partial_orders_by_queue_order(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     db = Database(db_path)
@@ -114,6 +114,7 @@ def test_articles_partial_orders_by_recently_created(tmp_path, monkeypatch):
         "published_date": "2026-04-20",
         "note": None,
         "library_state": 0,
+        "queue_order": 10,
     })
     db.upsert_article({
         "id": "newer",
@@ -124,6 +125,7 @@ def test_articles_partial_orders_by_recently_created(tmp_path, monkeypatch):
         "published_date": "2020-01-01",
         "note": None,
         "library_state": 0,
+        "queue_order": 20,
     })
     db.close()
 
