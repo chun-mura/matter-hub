@@ -147,18 +147,26 @@ def summarize_article_ollama(
     content_text: str,
     model: str = "gemma3:4b",
     base_url: str | None = None,
-    max_chars: int = 1200,
+    max_chars: int = 16000,
     log: LogFn | None = None,
 ) -> str:
+    """要約テキストを生成する。``max_chars`` はモデルが長文を返したあとの安全上限（DB/UI 向け）。"""
     prompt = build_summary_prompt(article, content_text)
     base = base_url or get_base_url()
     url = f"{base}/api/generate"
     use_stream = log is not None
+    # 既定の num_predict が小さいとモデル側で途中終了するため、要約に十分な余裕を付ける
+    generate_json: dict = {
+        "model": model,
+        "prompt": prompt,
+        "stream": use_stream,
+        "options": {"num_predict": 8192},
+    }
 
     if not use_stream:
         resp = httpx.post(
             url,
-            json={"model": model, "prompt": prompt, "stream": False},
+            json=generate_json,
             timeout=180,
         )
         resp.raise_for_status()
@@ -173,7 +181,7 @@ def summarize_article_ollama(
             with client.stream(
                 "POST",
                 url,
-                json={"model": model, "prompt": prompt, "stream": True},
+                json=generate_json,
             ) as resp:
                 resp.raise_for_status()
                 for line in resp.iter_lines():
