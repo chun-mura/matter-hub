@@ -3,8 +3,13 @@
 import json
 import os
 import re
+import time
+from collections.abc import Callable
 
 import httpx
+
+# (message, level?) — level matches matter_hub.sync.Logger
+LogFn = Callable[..., None]
 
 
 def get_base_url() -> str:
@@ -109,6 +114,92 @@ def translate_title_ollama(
     out = re.sub(r"^[`「『\"]+|[`」』\"]+$", "", out)
     out = out.splitlines()[0].strip() if out else ""
     return out or title.strip()
+
+
+def build_summary_prompt(article: dict, content_text: str) -> str:
+    from matter_hub.title_locale import display_title
+
+    title = display_title(article)
+    parts = [
+        "以下のWeb記事本文を日本語で要約してください。",
+        "出力は3〜5行で、重要ポイントを簡潔に記述してください。",
+        "箇条書きではなく自然な短文で出力し、前置きは不要です。",
+        "",
+        f"タイトル: {title}",
+        f"URL: {article.get('url', '')}",
+    ]
+    if article.get("author"):
+        parts.append(f"著者: {article['author']}")
+    if article.get("publisher"):
+        parts.append(f"媒体: {article['publisher']}")
+    parts.extend(
+        [
+            "",
+            "本文:",
+            content_text.strip(),
+        ]
+    )
+    return "\n".join(parts)
+
+
+def summarize_article_ollama(
+    article: dict,
+    content_text: str,
+    model: str = "gemma3:4b",
+    base_url: str | None = None,
+    max_chars: int = 1200,
+    log: LogFn | None = None,
+) -> str:
+    prompt = build_summary_prompt(article, content_text)
+    base = base_url or get_base_url()
+    url = f"{base}/api/generate"
+    use_stream = log is not None
+
+    if not use_stream:
+        resp = httpx.post(
+            url,
+            json={"model": model, "prompt": prompt, "stream": False},
+            timeout=180,
+        )
+        resp.raise_for_status()
+        out = (resp.json().get("response") or "").strip()
+    else:
+        assert log is not None
+        chunks: list[str] = []
+        last_report = 0.0
+        total_chars = 0
+        log("Ollama に要約リクエストを送信中…")
+        with httpx.Client(timeout=180) as client:
+            with client.stream(
+                "POST",
+                url,
+                json={"model": model, "prompt": prompt, "stream": True},
+            ) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    piece = obj.get("response") or ""
+                    if piece:
+                        chunks.append(piece)
+                        total_chars += len(piece)
+                    now = time.monotonic()
+                    if total_chars and (now - last_report) >= 2.0:
+                        log(f"モデル出力を受信中…（{total_chars} 文字）")
+                        last_report = now
+                    if obj.get("done"):
+                        break
+        out = "".join(chunks).strip()
+
+    out = re.sub(r"```(?:text|markdown)?\s*", "", out)
+    out = re.sub(r"```", "", out).strip()
+    if len(out) > max_chars:
+        out = out[:max_chars].rstrip()
+    return out
 
 
 def generate_embedding(

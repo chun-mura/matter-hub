@@ -4,6 +4,8 @@ from matter_hub.ollama import (
     tag_article_ollama,
     build_embedding_text,
     generate_embedding,
+    build_summary_prompt,
+    summarize_article_ollama,
 )
 
 
@@ -130,3 +132,28 @@ def test_generate_embedding(httpx_mock):
     result = generate_embedding("test text")
     assert len(result) == 768
     assert result[0] == 0.1
+
+
+def test_build_summary_prompt():
+    article = {
+        "title": "Rust ownership basics",
+        "title_ja": "Rustの所有権入門",
+        "url": "https://example.com/rust",
+        "author": "Alice",
+        "publisher": "TechBlog",
+    }
+    prompt = build_summary_prompt(article, "Ownership prevents data races.")
+    assert "Rustの所有権入門" in prompt
+    assert "Ownership prevents data races." in prompt
+    assert "Alice" in prompt
+
+
+def test_summarize_article_ollama(httpx_mock):
+    httpx_mock.add_response(
+        url="http://localhost:11434/api/generate",
+        json={"response": "```text\nRustの所有権モデルの要点を解説しています。\n```"},
+    )
+    article = {"title": "Rust ownership basics", "url": "https://example.com/rust"}
+    out = summarize_article_ollama(article, "Ownership model text")
+    assert "```" not in out
+    assert "所有権" in out
