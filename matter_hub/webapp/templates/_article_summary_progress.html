@@ -1,0 +1,26 @@
+<div id="summarize-progress-{{ a.id }}"
+     class="rounded border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 p-2 text-sm"
+     hx-get="/articles/{{ a.id }}/summarize/status"
+     hx-trigger="every 1s"
+     hx-swap="outerHTML">
+  <div class="text-gray-800 dark:text-gray-100 font-medium">要約を実行しています…</div>
+  {% if job.log %}
+    <details class="mt-2 text-xs text-gray-600 dark:text-gray-300" open>
+      <summary class="cursor-pointer select-none">ログ</summary>
+      <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap bg-gray-900 dark:bg-gray-950 text-gray-100 rounded p-2 font-mono text-[11px] leading-snug">{% for line in job.log %}{{ line }}
+{% endfor %}</pre>
+    </details>
+  {% else %}
+    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">ログを準備しています…</p>
+  {% endif %}
+</div>
+<div id="summary-toggle-{{ a.id }}" hx-swap-oob="outerHTML">
+  <button type="button"
+          disabled
+          class="summary-generate-btn px-3 py-1.5 bg-gray-400 text-white rounded cursor-not-allowed opacity-90">
+    <span class="summary-generating-label inline-flex items-center gap-1.5">
+      <span class="summary-spinner" aria-hidden="true"></span>
+      生成中…
+    </span>
+  </button>
+</div>

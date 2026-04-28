@@ -1,0 +1,13 @@
+{% if error %}
+  <div class="rounded border border-red-300 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-2 text-sm text-red-700 dark:text-red-300">
+    {{ error }}
+  </div>
+{% elif a.summary and (summary_open if summary_open is defined else true) %}
+  <div class="rounded border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/20 p-2 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+    {{ a.summary }}
+  </div>
+  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+    {{ a.summary_model or "unknown-model" }}
+    {% if a.summary_created_at %} · {{ a.summary_created_at[:19] }}{% endif %}
+  </div>
+{% endif %}
