@@ -372,7 +372,14 @@ def import_cmd():
 
 @import_cmd.command(name="url")
 @click.argument("urls", nargs=-1, required=True)
-@click.option("--source", default=None, help="ソース種別（hatena/hackernews/reddit/zenn/qiita/x/web）")
+@click.option(
+    "--source",
+    default=None,
+    help=(
+        "ソース種別（hatena/hackernews/reddit/zenn/qiita/x/web）。"
+        "source=x は X_BEARER_TOKEN（または TWITTER_BEARER_TOKEN）でAPI取得を試行"
+    ),
+)
 @click.option("--note", default=None, help="メモを追加")
 @click.option("--tag", "tag_names", multiple=True, help="タグを追加（複数指定可）")
 def import_url(urls, source, note, tag_names):
@@ -567,6 +574,10 @@ def help_cmd(ctx, command_name):
         table.add_row(f"matter-hub {name}", desc)
     console.print(table)
 
+    console.print(
+        "\n[dim]補足: source=x のURLインポートでは X API のBearer tokenを利用できます。"
+        " 環境変数 X_BEARER_TOKEN（または TWITTER_BEARER_TOKEN）を設定してください。[/dim]"
+    )
     console.print("\n[dim]各コマンドの詳細: matter-hub help <command>[/dim]\n")
 
 
