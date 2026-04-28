@@ -333,6 +333,10 @@ def test_deleted_column_added(tmp_path):
     assert "deleted" in cols
     assert "created_at" in cols
     assert "queue_order" in cols
+    assert "summary" in cols
+    assert "summary_model" in cols
+    assert "summary_created_at" in cols
+    assert "summary_source_url" in cols
     db.close()
 
 
@@ -364,7 +368,53 @@ def test_migration_idempotent_when_deleted_exists(tmp_path):
     assert cols.count("deleted") == 1
     assert cols.count("created_at") == 1
     assert cols.count("queue_order") == 1
+    assert cols.count("summary") == 1
+    assert cols.count("summary_model") == 1
+    assert cols.count("summary_created_at") == 1
+    assert cols.count("summary_source_url") == 1
     db2.close()
+
+
+def test_update_and_clear_article_summary(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.upsert_article({
+        "id": "art1", "title": "T", "url": "https://e.com",
+        "author": None, "publisher": None, "published_date": None,
+        "note": None, "library_state": 0,
+    })
+    assert db.update_article_summary(
+        "art1",
+        "これは要約です",
+        "gemma3:4b",
+        "https://e.com",
+    ) is True
+    row = db.conn.execute(
+        "SELECT summary, summary_model, summary_created_at, summary_source_url FROM articles WHERE id='art1'"
+    ).fetchone()
+    assert row["summary"] == "これは要約です"
+    assert row["summary_model"] == "gemma3:4b"
+    assert row["summary_created_at"] is not None
+    assert row["summary_source_url"] == "https://e.com"
+
+    assert db.clear_article_summary("art1") is True
+    cleared = db.conn.execute(
+        "SELECT summary, summary_model, summary_created_at, summary_source_url FROM articles WHERE id='art1'"
+    ).fetchone()
+    assert cleared["summary"] is None
+    assert cleared["summary_model"] is None
+    assert cleared["summary_created_at"] is None
+    assert cleared["summary_source_url"] is None
+    db.close()
+
+
+def test_articles_without_summary_active_view(tmp_path):
+    db = Database(tmp_path / "test.db")
+    _seed(db)
+    db.update_article_summary("a2", "done", "gemma3:4b")
+    rows = db.articles_without_summary(view="active")
+    ids = {r["id"] for r in rows}
+    assert ids == {"a1", "a3"}
+    db.close()
 
 
 def test_upsert_preserves_created_at_for_existing_article(tmp_path):

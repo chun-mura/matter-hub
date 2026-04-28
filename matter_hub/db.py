@@ -83,6 +83,18 @@ class Database:
             if "queue_order" not in columns:
                 cur.execute("ALTER TABLE articles ADD COLUMN queue_order INTEGER")
                 self.conn.commit()
+            if "summary" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN summary TEXT")
+                self.conn.commit()
+            if "summary_model" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN summary_model TEXT")
+                self.conn.commit()
+            if "summary_created_at" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN summary_created_at TEXT")
+                self.conn.commit()
+            if "summary_source_url" not in columns:
+                cur.execute("ALTER TABLE articles ADD COLUMN summary_source_url TEXT")
+                self.conn.commit()
 
     def _init_tables(self):
         cur = self.conn.cursor()
@@ -101,6 +113,10 @@ class Database:
                 deleted INTEGER DEFAULT 0,
                 title_ja TEXT,
                 title_ja_from TEXT,
+                summary TEXT,
+                summary_model TEXT,
+                summary_created_at TEXT,
+                summary_source_url TEXT,
                 created_at TEXT,
                 synced_at TEXT
             );
@@ -208,6 +224,33 @@ class Database:
         cur = self.conn.execute(
             "UPDATE articles SET title_ja = ?, title_ja_from = ? WHERE id = ?",
             (title_ja, title_ja_from, article_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def update_article_summary(
+        self,
+        article_id: str,
+        summary: str,
+        model: str,
+        source_url: str | None = None,
+    ) -> bool:
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self.conn.execute(
+            """UPDATE articles
+               SET summary = ?, summary_model = ?, summary_created_at = ?, summary_source_url = COALESCE(?, url)
+               WHERE id = ?""",
+            (summary, model, now, source_url, article_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def clear_article_summary(self, article_id: str) -> bool:
+        cur = self.conn.execute(
+            """UPDATE articles
+               SET summary = NULL, summary_model = NULL, summary_created_at = NULL, summary_source_url = NULL
+               WHERE id = ?""",
+            (article_id,),
         )
         self.conn.commit()
         return cur.rowcount > 0
@@ -379,6 +422,16 @@ class Database:
         rows = self.conn.execute(
             """SELECT a.* FROM articles a
                WHERE a.id NOT IN (SELECT article_id FROM embeddings)""",
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def articles_without_summary(self, view: str = "active") -> list[dict]:
+        view_sql = _view_clause(view)
+        rows = self.conn.execute(
+            f"""SELECT a.* FROM articles a
+                WHERE {view_sql}
+                  AND (a.summary IS NULL OR TRIM(a.summary) = '')
+                ORDER BY a.queue_order DESC, a.created_at DESC, a.synced_at DESC""",
         ).fetchall()
         return [dict(r) for r in rows]
 
