@@ -1,5 +1,5 @@
 services:
-  web:
+  api:
     build: .
     ports:
       - "8001:8000"
@@ -10,7 +10,23 @@ services:
       - MATTER_HUB_DB=/app/data/matter-hub.db
       - MATTER_HUB_CONFIG=/app/data/config.json
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - MATTER_HUB_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://host.docker.internal:5173
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: ["uvicorn", "matter_hub.webapp.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    restart: unless-stopped
+
+  web:
+    image: node:22-bookworm
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    environment:
+      # ブラウザは常に Vite へ /api を投げる。Node が api サービスへ中継（CORS 不要）
+      - VITE_API_PROXY_TARGET=http://api:8000
+    command: ["sh", "-c", "npm install && npm run dev -- --host 0.0.0.0 --port 5173"]
+    depends_on:
+      - api
     restart: unless-stopped
