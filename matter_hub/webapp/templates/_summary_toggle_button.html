@@ -1,14 +1,56 @@
 {% if a.summary %}
   {% if summary_open %}
-    <button class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded"
-            hx-post="/articles/{{ a.id }}/summary/close"
-            hx-target="#summary-{{ a.id }}"
-            hx-swap="innerHTML">要約を閉じる</button>
+    <div class="flex flex-wrap gap-2 items-center justify-end">
+      <button class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded"
+              hx-post="/articles/{{ a.id }}/summary/close"
+              hx-target="#summary-{{ a.id }}"
+              hx-swap="innerHTML">要約を閉じる</button>
+      {% if a.x_summarize_disabled %}
+        <button type="button"
+                class="px-3 py-1.5 bg-indigo-600 text-white rounded opacity-60 cursor-not-allowed"
+                disabled
+                aria-disabled="true"
+                title="環境変数が未登録のため使用できません（再要約には X_BEARER_TOKEN または TWITTER_BEARER_TOKEN の設定が必要です）">
+          再要約
+        </button>
+      {% else %}
+        <button type="button"
+                class="summary-resummarize-trigger summary-generate-btn px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded disabled:opacity-70 disabled:cursor-not-allowed"
+                data-article-id="{{ a.id }}">
+          <span class="summary-generate-label">再要約</span>
+          <span class="summary-generating-label">
+            <span class="summary-spinner" aria-hidden="true"></span>
+            再要約中…
+          </span>
+        </button>
+      {% endif %}
+    </div>
   {% else %}
-    <button class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded"
-            hx-get="/articles/{{ a.id }}/summary"
-            hx-target="#summary-{{ a.id }}"
-            hx-swap="innerHTML">要約を見る</button>
+    <div class="flex flex-wrap gap-2 items-center justify-end">
+      <button class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded"
+              hx-get="/articles/{{ a.id }}/summary"
+              hx-target="#summary-{{ a.id }}"
+              hx-swap="innerHTML">要約を見る</button>
+      {% if a.x_summarize_disabled %}
+        <button type="button"
+                class="px-3 py-1.5 bg-indigo-600 text-white rounded opacity-60 cursor-not-allowed"
+                disabled
+                aria-disabled="true"
+                title="環境変数が未登録のため使用できません（再要約には X_BEARER_TOKEN または TWITTER_BEARER_TOKEN の設定が必要です）">
+          再要約
+        </button>
+      {% else %}
+        <button type="button"
+                class="summary-resummarize-trigger summary-generate-btn px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded disabled:opacity-70 disabled:cursor-not-allowed"
+                data-article-id="{{ a.id }}">
+          <span class="summary-generate-label">再要約</span>
+          <span class="summary-generating-label">
+            <span class="summary-spinner" aria-hidden="true"></span>
+            再要約中…
+          </span>
+        </button>
+      {% endif %}
+    </div>
   {% endif %}
 {% else %}
   {% if a.x_summarize_disabled %}

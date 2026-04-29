@@ -28,6 +28,58 @@ window.matterHub = {
     const chev = btn.querySelector(".tag-chevron");
     if (chev) chev.textContent = open ? "▾" : "▸";
   },
+
+  _resummarizeTrigger: null,
+
+  openResummarizeModal(trigger) {
+    if (!trigger || trigger.disabled) return;
+    const modal = document.getElementById("resummarize-confirm-modal");
+    if (!modal) return;
+    if (!modal.classList.contains("hidden")) return;
+    const articleId = trigger.getAttribute("data-article-id");
+    const progressEl = articleId && document.getElementById(`summarize-progress-${articleId}`);
+    /* Placeholder from GET /summarize/status when snap is None has no hx-get — must not block modal. */
+    if (progressEl && progressEl.hasAttribute("hx-get")) return;
+    this._resummarizeTrigger = trigger;
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+    const confirmBtn = modal.querySelector("[data-resummarize-confirm]");
+    if (confirmBtn) confirmBtn.focus();
+  },
+
+  closeResummarizeModal() {
+    const modal = document.getElementById("resummarize-confirm-modal");
+    if (modal) {
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+    }
+    const prev = this._resummarizeTrigger;
+    this._resummarizeTrigger = null;
+    if (prev && document.contains(prev)) {
+      try {
+        prev.focus();
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+  },
+
+  confirmResummarize() {
+    const trigger = this._resummarizeTrigger;
+    const articleId = trigger && trigger.getAttribute("data-article-id");
+    const modal = document.getElementById("resummarize-confirm-modal");
+    if (modal) {
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+    }
+    this._resummarizeTrigger = null;
+    if (!articleId || !trigger || !window.htmx) return;
+    window.htmx.ajax("POST", `/articles/${articleId}/summarize`, {
+      target: `#summary-${articleId}`,
+      swap: "innerHTML",
+      source: trigger,
+    });
+  },
 };
 
 // Mobile swipe gestures for article rows.
@@ -182,10 +234,68 @@ window.matterHub = {
     scope.querySelectorAll(".article-row").forEach(attachSwipe);
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function eventTargetElement(e) {
+    const t = e.target;
+    if (!t) return null;
+    if (t.nodeType === Node.ELEMENT_NODE) return t;
+    return t.parentElement;
+  }
+
+  let resummarizeUiBound = false;
+
+  function bindResummarizeUi() {
+    if (resummarizeUiBound) return;
+    resummarizeUiBound = true;
+    document.addEventListener(
+      "click",
+      (e) => {
+        const el = eventTargetElement(e);
+        if (!el) return;
+
+        const resBtn = el.closest(".summary-resummarize-trigger");
+        if (resBtn && !resBtn.disabled) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.matterHub.openResummarizeModal(resBtn);
+          return;
+        }
+        if (el.closest("[data-resummarize-backdrop]") || el.closest("[data-resummarize-cancel]")) {
+          const modal = document.getElementById("resummarize-confirm-modal");
+          if (modal && !modal.classList.contains("hidden")) {
+            window.matterHub.closeResummarizeModal();
+          }
+          return;
+        }
+        if (el.closest("[data-resummarize-confirm]")) {
+          e.preventDefault();
+          window.matterHub.confirmResummarize();
+        }
+      },
+      true,
+    );
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const modal = document.getElementById("resummarize-confirm-modal");
+      if (modal && !modal.classList.contains("hidden")) {
+        e.preventDefault();
+        window.matterHub.closeResummarizeModal();
+      }
+    });
+  }
+
+  function initAppShell() {
     window.matterHub.initSystemTheme();
     bindAll(document);
-  });
+    bindResummarizeUi();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAppShell);
+  } else {
+    initAppShell();
+  }
+
   document.body.addEventListener("htmx:afterSwap", (ev) => {
     bindAll(ev.target);
   });

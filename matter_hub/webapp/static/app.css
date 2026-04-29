@@ -22,7 +22,9 @@
   display: inline-flex;
 }
 
-.summary-generate-btn.htmx-request {
+/* Only native hx-post 要約生成 should block clicks; 再要約 uses same base class but
+   htmx.ajax(source) can leave htmx-request — pointer-events:none would break reopening. */
+button.summary-generate-btn[hx-post].htmx-request {
   pointer-events: none;
 }
 

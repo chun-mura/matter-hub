@@ -31,6 +31,9 @@ def test_index_returns_html(client):
     assert "要約生成" in r.text
     assert "生成中..." in r.text
     assert "summary-spinner" in r.text
+    assert "resummarize-confirm-modal" in r.text
+    assert "画面上の既存の要約" in r.text
+    assert "再要約を開始" in r.text
 
 
 def test_index_shows_title_ja_when_set(tmp_path, monkeypatch):
@@ -75,6 +78,7 @@ def test_index_keeps_summary_closed_by_default(tmp_path, monkeypatch):
     r = TestClient(create_app()).get("/")
     assert r.status_code == 200
     assert "要約を見る" in r.text
+    assert "再要約" in r.text
     assert "要約を閉じる" not in r.text
     assert "初期表示では見えない要約" not in r.text
 
@@ -310,6 +314,9 @@ def test_get_article_summary_partial(tmp_path, monkeypatch):
     assert "要約済みです" in r.text
     assert "gemma3:4b" in r.text
     assert "要約を閉じる" in r.text
+    assert "再要約" in r.text
+    assert 'class="summary-resummarize-trigger' in r.text
+    assert 'data-article-id="a1"' in r.text
 
 
 def test_post_article_summary_close_success(tmp_path, monkeypatch):
@@ -329,6 +336,7 @@ def test_post_article_summary_close_success(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert "要約済みです" not in r.text
     assert "要約を見る" in r.text
+    assert "再要約" in r.text
 
 
 def test_post_article_summary_close_unknown_returns_404(tmp_path, monkeypatch):
@@ -382,6 +390,47 @@ def test_post_article_summarize_success(tmp_path, monkeypatch):
     assert row["summary"] == "生成された要約"
     assert row["summary_model"] == "gemma3:4b"
     assert row["summary_source_url"] == "https://e.com/a1"
+    db.close()
+
+
+def test_post_article_resummarize_overwrites_existing(tmp_path, monkeypatch):
+    db_path = tmp_path / "web.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    db = Database(db_path)
+    db.upsert_article({
+        "id": "a1", "title": "Has Old Summary", "url": "https://e.com/a1",
+        "author": None, "publisher": None, "published_date": None,
+        "note": "fallback", "library_state": 0,
+    })
+    db.update_article_summary("a1", "古い要約", "gemma3:4b", "https://e.com/a1")
+    db.close()
+
+    monkeypatch.setattr("matter_hub.webapp.summarize_runner.ensure_ollama_noninteractive", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        "matter_hub.webapp.summarize_runner.fetch_article_content_text", lambda *_args, **_kwargs: "本文"
+    )
+    monkeypatch.setattr(
+        "matter_hub.webapp.summarize_runner.summarize_article_ollama", lambda *_args, **_kwargs: "新しい要約"
+    )
+
+    c = TestClient(create_app())
+    r = c.post("/articles/a1/summarize")
+    assert r.status_code == 200
+    assert "summarize-progress-a1" in r.text
+
+    final = None
+    for _ in range(200):
+        final = c.get("/articles/a1/summarize/status")
+        if "新しい要約" in final.text:
+            break
+        time.sleep(0.02)
+    assert final is not None
+    assert "新しい要約" in final.text
+    assert "古い要約" not in final.text
+
+    db = Database(db_path)
+    row = db.conn.execute("SELECT summary FROM articles WHERE id='a1'").fetchone()
+    assert row["summary"] == "新しい要約"
     db.close()
 
 
