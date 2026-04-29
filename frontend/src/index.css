@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .summary-spinner {
+    display: inline-block;
+    width: 0.85em;
+    height: 0.85em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: mh-spin 0.65s linear infinite;
+    vertical-align: -0.1em;
+  }
+}
+
+@keyframes mh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
