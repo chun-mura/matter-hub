@@ -109,7 +109,6 @@ export function ArticleRow({
     try {
       const p = await postSummaryClose(id);
       setSummaryPanel(p);
-      onMutate();
     } catch (e) {
       setSummarizeError(e instanceof Error ? e.message : "error");
     }
