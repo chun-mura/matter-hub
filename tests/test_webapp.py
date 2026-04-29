@@ -19,24 +19,37 @@ def client(tmp_path, monkeypatch):
     })
     db.add_tag("a1", "AI", "matter")
     db.close()
-    app = create_app()
-    return TestClient(app)
+    return TestClient(create_app())
 
 
-def test_index_returns_html(client):
-    r = client.get("/")
+def test_root_json():
+    r = TestClient(create_app()).get("/")
     assert r.status_code == 200
-    assert "text/html" in r.headers["content-type"]
-    assert "Matter Hub" in r.text
-    assert "要約生成" in r.text
-    assert "生成中..." in r.text
-    assert "summary-spinner" in r.text
-    assert "resummarize-confirm-modal" in r.text
-    assert "画面上の既存の要約" in r.text
-    assert "再要約を開始" in r.text
+    assert r.headers["content-type"].startswith("application/json")
+    body = r.json()
+    assert body["service"] == "matter-hub-api"
 
 
-def test_index_shows_title_ja_when_set(tmp_path, monkeypatch):
+def test_cors_default_allows_tailscale_style_vite_origin():
+    """既定の allow_origin_regex で LAN / Tailscale の IP:5173 を許可する。"""
+    c = TestClient(create_app())
+    origin = "http://100.79.172.93:5173"
+    r = c.get("/api/sync", headers={"Origin": origin})
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == origin
+
+
+def test_cors_strict_without_regex_does_not_add_acao_for_unknown_origin(monkeypatch):
+    monkeypatch.setenv("MATTER_HUB_CORS_STRICT", "1")
+    monkeypatch.delenv("MATTER_HUB_CORS_ORIGIN_REGEX", raising=False)
+    c = TestClient(create_app())
+    origin = "http://100.79.172.93:5173"
+    r = c.get("/api/sync", headers={"Origin": origin})
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") in (None, "")
+
+
+def test_bootstrap_title_ja_when_set(tmp_path, monkeypatch):
     db_path = tmp_path / "web2.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     db = Database(db_path)
@@ -52,13 +65,14 @@ def test_index_shows_title_ja_when_set(tmp_path, monkeypatch):
     })
     db.update_title_translation("a1", "こんにちは世界", "Hello World")
     db.close()
-    r = TestClient(create_app()).get("/")
+    r = TestClient(create_app()).get("/api/bootstrap")
     assert r.status_code == 200
-    assert "こんにちは世界" in r.text
-    assert "Hello World" not in r.text
+    titles = [a.get("title_ja") or a.get("title") for a in r.json()["articles"]]
+    assert "こんにちは世界" in titles
+    assert "Hello World" not in titles
 
 
-def test_index_keeps_summary_closed_by_default(tmp_path, monkeypatch):
+def test_bootstrap_summary_closed_by_default(tmp_path, monkeypatch):
     db_path = tmp_path / "web_summary_closed.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     db = Database(db_path)
@@ -75,21 +89,21 @@ def test_index_keeps_summary_closed_by_default(tmp_path, monkeypatch):
     db.update_article_summary("a1", "初期表示では見えない要約", "gemma3:4b", "https://e.com/a1")
     db.close()
 
-    r = TestClient(create_app()).get("/")
+    r = TestClient(create_app()).get("/api/bootstrap")
     assert r.status_code == 200
-    assert "要約を見る" in r.text
-    assert "再要約" in r.text
-    assert "要約を閉じる" not in r.text
-    assert "初期表示では見えない要約" not in r.text
+    a1 = r.json()["articles"][0]
+    assert a1["summary"] == "初期表示では見えない要約"
+    # 一覧 JSON には要約全文を載せない方針でもよいが、DB の列がそのまま返る
+    assert "初期表示では見えない要約" in (a1.get("summary") or "")
 
 
 def _seed_many(db_path):
     db = Database(db_path)
     for i, (title, tags, ls) in enumerate([
-        ("Python basics",  ["Python"],         0),
-        ("Rust ownership", ["Rust"],           0),
-        ("Python + AI",    ["Python", "AI"],   0),
-        ("Archived one",   ["Python"],         2),
+        ("Python basics", ["Python"], 0),
+        ("Rust ownership", ["Rust"], 0),
+        ("Python + AI", ["Python", "AI"], 0),
+        ("Archived one", ["Python"], 2),
     ]):
         aid = f"a{i}"
         db.upsert_article({
@@ -102,39 +116,41 @@ def _seed_many(db_path):
     db.close()
 
 
-def test_articles_partial_filters_by_view(tmp_path, monkeypatch):
+def test_api_articles_filters_by_view(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
-    app = create_app()
-    c = TestClient(app)
-    r = c.get("/articles?view=active")
+    c = TestClient(create_app())
+    r = c.get("/api/articles?view=active")
     assert r.status_code == 200
-    assert "Python basics" in r.text
-    assert "Archived one" not in r.text
+    titles = [a["title"] for a in r.json()["articles"]]
+    assert "Python basics" in titles
+    assert "Archived one" not in titles
 
 
-def test_articles_partial_tags_and(tmp_path, monkeypatch):
+def test_api_articles_tags_and(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.get("/articles?view=active&tags=Python,AI")
-    assert "Python + AI" in r.text
-    assert "Python basics" not in r.text
+    r = c.get("/api/articles?view=active&tags=Python,AI")
+    titles = [a["title"] for a in r.json()["articles"]]
+    assert "Python + AI" in titles
+    assert "Python basics" not in titles
 
 
-def test_articles_partial_search(tmp_path, monkeypatch):
+def test_api_articles_search(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.get("/articles?view=active&q=Rust")
-    assert "Rust ownership" in r.text
-    assert "Python basics" not in r.text
+    r = c.get("/api/articles?view=active&q=Rust")
+    titles = [a["title"] for a in r.json()["articles"]]
+    assert "Rust ownership" in titles
+    assert "Python basics" not in titles
 
 
-def test_articles_partial_orders_by_queue_order(tmp_path, monkeypatch):
+def test_api_articles_orders_by_queue_order(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     db = Database(db_path)
@@ -163,46 +179,48 @@ def test_articles_partial_orders_by_queue_order(tmp_path, monkeypatch):
     db.close()
 
     c = TestClient(create_app())
-    r = c.get("/articles?view=active")
+    r = c.get("/api/articles?view=active")
     assert r.status_code == 200
-    assert r.text.index("Newer Article") < r.text.index("Older Article")
+    titles = [a["title"] for a in r.json()["articles"]]
+    assert titles.index("Newer Article") < titles.index("Older Article")
 
 
-def test_tags_partial_active_view(tmp_path, monkeypatch):
+def test_api_tags_active_view(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.get("/tags?view=active")
+    r = c.get("/api/tags?view=active")
     assert r.status_code == 200
-    assert "Python" in r.text
-    assert "Rust" in r.text
+    names = [t["name"] for t in r.json()["tags"]]
+    assert "Python" in names
+    assert "Rust" in names
 
 
-def test_delete_soft_deletes_and_returns_empty(tmp_path, monkeypatch):
+def test_api_delete_soft_deletes(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.post("/articles/a0/delete")
+    r = c.post("/api/articles/a0/delete")
     assert r.status_code == 200
-    assert r.text.strip() == ""
+    assert r.json() == {"ok": True}
     db = Database(db_path)
     row = db.conn.execute("SELECT deleted FROM articles WHERE id='a0'").fetchone()
     assert row["deleted"] == 1
     db.close()
 
 
-def test_delete_unknown_returns_404(tmp_path, monkeypatch):
+def test_api_delete_unknown_returns_404(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.post("/articles/missing/delete")
+    r = c.post("/api/articles/missing/delete")
     assert r.status_code == 404
 
 
-def test_restore_clears_deleted_flag(tmp_path, monkeypatch):
+def test_api_restore_clears_deleted_flag(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
@@ -210,7 +228,7 @@ def test_restore_clears_deleted_flag(tmp_path, monkeypatch):
     db.set_deleted("a0", True)
     db.close()
     c = TestClient(create_app())
-    r = c.post("/articles/a0/restore")
+    r = c.post("/api/articles/a0/restore")
     assert r.status_code == 200
     db = Database(db_path)
     row = db.conn.execute("SELECT deleted FROM articles WHERE id='a0'").fetchone()
@@ -218,39 +236,39 @@ def test_restore_clears_deleted_flag(tmp_path, monkeypatch):
     db.close()
 
 
-def test_restore_unknown_returns_404(tmp_path, monkeypatch):
+def test_api_restore_unknown_returns_404(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.post("/articles/missing/restore")
+    r = c.post("/api/articles/missing/restore")
     assert r.status_code == 404
 
 
-def test_archive_sets_library_state_archived(tmp_path, monkeypatch):
+def test_api_archive_sets_library_state_archived(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.post("/articles/a0/archive")
+    r = c.post("/api/articles/a0/archive")
     assert r.status_code == 200
-    assert r.text.strip() == ""
+    assert r.json() == {"ok": True}
     db = Database(db_path)
     row = db.conn.execute("SELECT library_state FROM articles WHERE id='a0'").fetchone()
     assert row["library_state"] == 2
     db.close()
 
 
-def test_archive_unknown_returns_404(tmp_path, monkeypatch):
+def test_api_archive_unknown_returns_404(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.post("/articles/missing/archive")
+    r = c.post("/api/articles/missing/archive")
     assert r.status_code == 404
 
 
-def test_unarchive_restores_library_state(tmp_path, monkeypatch):
+def test_api_unarchive_restores_library_state(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
@@ -258,7 +276,7 @@ def test_unarchive_restores_library_state(tmp_path, monkeypatch):
     db.set_library_state("a0", 2)
     db.close()
     c = TestClient(create_app())
-    r = c.post("/articles/a0/unarchive")
+    r = c.post("/api/articles/a0/unarchive")
     assert r.status_code == 200
     db = Database(db_path)
     row = db.conn.execute("SELECT library_state FROM articles WHERE id='a0'").fetchone()
@@ -266,37 +284,39 @@ def test_unarchive_restores_library_state(tmp_path, monkeypatch):
     db.close()
 
 
-def test_unarchive_unknown_returns_404(tmp_path, monkeypatch):
+def test_api_unarchive_unknown_returns_404(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.post("/articles/missing/unarchive")
+    r = c.post("/api/articles/missing/unarchive")
     assert r.status_code == 404
 
 
-def test_index_respects_view_param(tmp_path, monkeypatch):
+def test_api_bootstrap_respects_view_param(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.get("/?view=archived")
+    r = c.get("/api/bootstrap?view=archived")
     assert r.status_code == 200
-    assert "Archived one" in r.text
-    assert "Python basics" not in r.text
+    titles = [a["title"] for a in r.json()["articles"]]
+    assert "Archived one" in titles
+    assert "Python basics" not in titles
 
 
-def test_index_respects_tags_param(tmp_path, monkeypatch):
+def test_api_bootstrap_respects_tags_param(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.get("/?tags=Python,AI")
-    assert "Python + AI" in r.text
-    assert "Rust ownership" not in r.text
+    r = c.get("/api/bootstrap?tags=Python,AI")
+    titles = [a["title"] for a in r.json()["articles"]]
+    assert "Python + AI" in titles
+    assert "Rust ownership" not in titles
 
 
-def test_get_article_summary_partial(tmp_path, monkeypatch):
+def test_api_get_article_summary(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     db = Database(db_path)
@@ -309,17 +329,15 @@ def test_get_article_summary_partial(tmp_path, monkeypatch):
     db.close()
 
     c = TestClient(create_app())
-    r = c.get("/articles/a1/summary")
+    r = c.get("/api/articles/a1/summary")
     assert r.status_code == 200
-    assert "要約済みです" in r.text
-    assert "gemma3:4b" in r.text
-    assert "要約を閉じる" in r.text
-    assert "再要約" in r.text
-    assert 'class="summary-resummarize-trigger' in r.text
-    assert 'data-article-id="a1"' in r.text
+    body = r.json()
+    assert body["summary_open"] is True
+    assert body["article"]["summary"] == "要約済みです"
+    assert body["article"]["summary_model"] == "gemma3:4b"
 
 
-def test_post_article_summary_close_success(tmp_path, monkeypatch):
+def test_api_post_article_summary_close_success(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     db = Database(db_path)
@@ -332,23 +350,23 @@ def test_post_article_summary_close_success(tmp_path, monkeypatch):
     db.close()
 
     c = TestClient(create_app())
-    r = c.post("/articles/a1/summary/close")
+    r = c.post("/api/articles/a1/summary/close")
     assert r.status_code == 200
-    assert "要約済みです" not in r.text
-    assert "要約を見る" in r.text
-    assert "再要約" in r.text
+    body = r.json()
+    assert body["summary_open"] is False
+    assert body["article"]["summary"] == "要約済みです"
 
 
-def test_post_article_summary_close_unknown_returns_404(tmp_path, monkeypatch):
+def test_api_post_article_summary_close_unknown_returns_404(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.post("/articles/missing/summary/close")
+    r = c.post("/api/articles/missing/summary/close")
     assert r.status_code == 404
 
 
-def test_post_article_summarize_success(tmp_path, monkeypatch):
+def test_api_post_article_summarize_success(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     db = Database(db_path)
@@ -368,20 +386,21 @@ def test_post_article_summarize_success(tmp_path, monkeypatch):
     )
 
     c = TestClient(create_app())
-    r = c.post("/articles/a1/summarize")
+    r = c.post("/api/articles/a1/summarize")
     assert r.status_code == 200
-    assert "summarize-progress-a1" in r.text
-    assert "/articles/a1/summarize/status" in r.text
+    start = r.json()
+    assert start["outcome"] == "started"
+    assert start["job"]["status"] == "running"
 
     final = None
     for _ in range(200):
-        final = c.get("/articles/a1/summarize/status")
-        if "生成された要約" in final.text and "要約を閉じる" in final.text:
+        final = c.get("/api/articles/a1/summarize/status").json()
+        if final.get("summary_panel") and final["summary_panel"]["article"].get("summary") == "生成された要約":
             break
         time.sleep(0.02)
     assert final is not None
-    assert "生成された要約" in final.text
-    assert "要約を閉じる" in final.text
+    assert final["summary_panel"]["summary_open"] is True
+    assert "生成された要約" in final["summary_panel"]["article"]["summary"]
 
     db = Database(db_path)
     row = db.conn.execute(
@@ -393,7 +412,7 @@ def test_post_article_summarize_success(tmp_path, monkeypatch):
     db.close()
 
 
-def test_post_article_resummarize_overwrites_existing(tmp_path, monkeypatch):
+def test_api_post_article_resummarize_overwrites_existing(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     db = Database(db_path)
@@ -414,19 +433,19 @@ def test_post_article_resummarize_overwrites_existing(tmp_path, monkeypatch):
     )
 
     c = TestClient(create_app())
-    r = c.post("/articles/a1/summarize")
+    r = c.post("/api/articles/a1/summarize")
     assert r.status_code == 200
-    assert "summarize-progress-a1" in r.text
+    assert r.json()["outcome"] == "started"
 
     final = None
     for _ in range(200):
-        final = c.get("/articles/a1/summarize/status")
-        if "新しい要約" in final.text:
+        final = c.get("/api/articles/a1/summarize/status").json()
+        sp = final.get("summary_panel")
+        if sp and sp["article"].get("summary") == "新しい要約":
             break
         time.sleep(0.02)
     assert final is not None
-    assert "新しい要約" in final.text
-    assert "古い要約" not in final.text
+    assert final["summary_panel"]["article"]["summary"] == "新しい要約"
 
     db = Database(db_path)
     row = db.conn.execute("SELECT summary FROM articles WHERE id='a1'").fetchone()
@@ -434,37 +453,38 @@ def test_post_article_resummarize_overwrites_existing(tmp_path, monkeypatch):
     db.close()
 
 
-def test_post_article_summarize_ollama_unavailable(tmp_path, monkeypatch):
+def test_api_post_article_summarize_ollama_unavailable(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     monkeypatch.setattr("matter_hub.webapp.summarize_runner.ensure_ollama_noninteractive", lambda **_kwargs: False)
 
     c = TestClient(create_app())
-    r = c.post("/articles/a0/summarize")
+    r = c.post("/api/articles/a0/summarize")
     assert r.status_code == 200
-    assert "summarize-progress-a0" in r.text
+    assert r.json()["outcome"] == "started"
 
     final = None
     for _ in range(200):
-        final = c.get("/articles/a0/summarize/status")
-        if "Ollamaに接続できません" in final.text:
+        final = c.get("/api/articles/a0/summarize/status").json()
+        sp = final.get("summary_panel")
+        if sp and sp.get("error") and "Ollamaに接続できません" in sp["error"]:
             break
         time.sleep(0.02)
     assert final is not None
-    assert "Ollamaに接続できません" in final.text
+    assert "Ollamaに接続できません" in final["summary_panel"]["error"]
 
 
-def test_post_article_summarize_unknown_returns_404(tmp_path, monkeypatch):
+def test_api_post_article_summarize_unknown_returns_404(tmp_path, monkeypatch):
     db_path = tmp_path / "web.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     _seed_many(db_path)
     c = TestClient(create_app())
-    r = c.post("/articles/missing/summarize")
+    r = c.post("/api/articles/missing/summarize")
     assert r.status_code == 404
 
 
-def test_index_x_article_summarize_disabled_without_bearer(tmp_path, monkeypatch):
+def test_api_bootstrap_x_article_summarize_disabled_without_bearer(tmp_path, monkeypatch):
     db_path = tmp_path / "web_x_no_bearer.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     monkeypatch.delenv("X_BEARER_TOKEN", raising=False)
@@ -483,13 +503,13 @@ def test_index_x_article_summarize_disabled_without_bearer(tmp_path, monkeypatch
     })
     db.close()
 
-    r = TestClient(create_app()).get("/")
+    r = TestClient(create_app()).get("/api/bootstrap")
     assert r.status_code == 200
-    assert "環境変数が未登録のため使用できません" in r.text
-    assert 'aria-disabled="true"' in r.text
+    x1 = next(a for a in r.json()["articles"] if a["id"] == "x1")
+    assert x1["x_summarize_disabled"] is True
 
 
-def test_index_x_article_summarize_enabled_with_bearer(tmp_path, monkeypatch):
+def test_api_bootstrap_x_article_summarize_enabled_with_bearer(tmp_path, monkeypatch):
     db_path = tmp_path / "web_x_bearer.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     monkeypatch.setenv("X_BEARER_TOKEN", "test-token")
@@ -507,13 +527,12 @@ def test_index_x_article_summarize_enabled_with_bearer(tmp_path, monkeypatch):
     })
     db.close()
 
-    r = TestClient(create_app()).get("/")
-    assert r.status_code == 200
-    assert 'hx-post="/articles/x1/summarize"' in r.text
-    assert "環境変数が未登録のため使用できません" not in r.text
+    r = TestClient(create_app()).get("/api/bootstrap")
+    x1 = next(a for a in r.json()["articles"] if a["id"] == "x1")
+    assert x1["x_summarize_disabled"] is False
 
 
-def test_index_x_url_matter_source_summarize_disabled_without_bearer(tmp_path, monkeypatch):
+def test_api_bootstrap_x_url_matter_source_summarize_disabled_without_bearer(tmp_path, monkeypatch):
     """Matter 同期などで source が matter のままの X URL でも要約生成はロックする。"""
     db_path = tmp_path / "web_xurl_matter.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
@@ -533,13 +552,12 @@ def test_index_x_url_matter_source_summarize_disabled_without_bearer(tmp_path, m
     })
     db.close()
 
-    r = TestClient(create_app()).get("/")
-    assert r.status_code == 200
-    assert "環境変数が未登録のため使用できません" in r.text
-    assert 'aria-disabled="true"' in r.text
+    r = TestClient(create_app()).get("/api/bootstrap")
+    m1 = next(a for a in r.json()["articles"] if a["id"] == "m1")
+    assert m1["x_summarize_disabled"] is True
 
 
-def test_post_article_summarize_x_without_bearer_returns_error(tmp_path, monkeypatch):
+def test_api_post_article_summarize_x_without_bearer_returns_error(tmp_path, monkeypatch):
     db_path = tmp_path / "web_x_summarize_block.db"
     monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
     monkeypatch.delenv("X_BEARER_TOKEN", raising=False)
@@ -559,6 +577,16 @@ def test_post_article_summarize_x_without_bearer_returns_error(tmp_path, monkeyp
     db.close()
 
     c = TestClient(create_app())
-    r = c.post("/articles/x1/summarize")
+    r = c.post("/api/articles/x1/summarize")
     assert r.status_code == 200
-    assert "環境変数が未登録のため要約生成は使用できません" in r.text
+    body = r.json()
+    assert body["outcome"] == "config_error"
+    assert "環境変数が未登録のため要約生成は使用できません" in body["panel"]["error"]
+
+
+def test_api_sync_get_returns_snapshot(client):
+    r = client.get("/api/sync")
+    assert r.status_code == 200
+    data = r.json()
+    assert "status" in data
+    assert data["status"] in ("idle", "running", "ok", "error")
