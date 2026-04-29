@@ -1,12 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSync, postSync, type SyncSnapshot } from "../api";
 
-export function SyncPanel({ initial }: { initial: SyncSnapshot }) {
+export function SyncPanel({
+  initial,
+  onSyncFinished,
+}: {
+  initial: SyncSnapshot;
+  onSyncFinished?: () => void;
+}) {
   const [sync, setSync] = useState(initial);
 
   useEffect(() => {
     setSync(initial);
   }, [initial]);
+
+  const prevStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = sync.status;
+    if (prev === "running" && sync.status !== "running") {
+      onSyncFinished?.();
+    }
+  }, [sync.status, onSyncFinished]);
 
   useEffect(() => {
     if (sync.status !== "running") return;

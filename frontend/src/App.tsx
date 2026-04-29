@@ -50,9 +50,10 @@ export default function App() {
 
   const tagsKey = selectedTags.join(",");
 
-  const loadBootstrap = useCallback(async () => {
+  const loadBootstrap = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     setErr(null);
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const b = await getBootstrap({
         view,
@@ -68,9 +69,13 @@ export default function App() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : "load failed");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [view, qApplied, tagsKey]);
+
+  const onSyncFinished = useCallback(() => {
+    void loadBootstrap({ silent: true });
+  }, [loadBootstrap]);
 
   useEffect(() => {
     void loadBootstrap();
@@ -200,7 +205,9 @@ export default function App() {
           {viewBtn("trash", "trash")}
           <span className="text-gray-500 dark:text-gray-400 text-sm">{total} articles</span>
         </div>
-        <div className="w-full">{sync ? <SyncPanel initial={sync} /> : null}</div>
+        <div className="w-full">
+          {sync ? <SyncPanel initial={sync} onSyncFinished={onSyncFinished} /> : null}
+        </div>
       </header>
 
       {err ? (
