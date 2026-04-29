@@ -89,21 +89,58 @@ uv run matter-hub stats           # 興味の傾向（著者別、月別）
 - 設定（認証トークン）: `~/.matter-hub/config.json`
 - データベース（SQLite）: `data/matter-hub.db`（プロジェクト内、gitignore対象）
 
-## Webapp (Docker)
+## Webapp（FastAPI + React）
 
-ブラウザから検索・タグフィルター・アーカイブ閲覧・削除ができるローカルWebアプリ。
+ブラウザから検索・タグフィルター・アーカイブ閲覧・削除・要約・同期ができるローカルWebアプリ。**API（バックエンド）と Vite（フロント）でポートが分かれます。**
+
+### ローカル開発（二重起動）
+
+1. **API（既定ポート 8000）**
 
 ```bash
-# 起動
+uv run uvicorn matter_hub.webapp.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+2. **フロント（既定ポート 5173）** — Node.js 20 以上が必要です。
+
+```bash
+cd frontend
+cp .env.example .env   # 初回のみ（中身は空でも可）
+npm install
+npm run dev
+```
+
+ブラウザで `http://localhost:5173` や `http://100.79.172.93:5173` など Vite の URL を開きます。
+
+**推奨（開発）:** `VITE_API_BASE_URL` は**設定しない**（空）。フロントは **`/api/...` へ相対 fetch** し、Vite の **`server.proxy`** が Node 側でバックエンドへ転送します。ブラウザから見ると常に Vite と同一オリジンなので **CORS は不要**です。転送先は `VITE_API_PROXY_TARGET`（未設定時は `http://127.0.0.1:8000`）。API が `8001` なら `.env` に `VITE_API_PROXY_TARGET=http://127.0.0.1:8001` を書いてください。
+
+**注意:** `http://100.79.172.93:5173` でページを開いているのに `fetch('http://localhost:8001/api/...')` すると、`localhost` は**そのブラウザを動かしている PC** を指します。API サーバー上の Matter Hub には届きません。別 PC のブラウザでは **localhost は使わない**か、上記のように **プロキシ＋相対 `/api`** にしてください。
+
+**直 fetch（別オリジン）を使う場合:** `VITE_API_BASE_URL=http://...` を設定すると、ブラウザが直接 API にアクセスします。そのときは API 側の CORS が必要です。
+
+- **既定（開発・API 側）:** `MATTER_HUB_CORS_STRICT` を付けない限り、Vite 常用ポート **5173 / 4173** で多くの `Origin` を正規表現で許可します。
+- **`MATTER_HUB_CORS_ORIGINS`** — カンマ区切りの完全一致。
+- **`MATTER_HUB_CORS_ORIGIN_REGEX`** — 設定すると既定の広い正規表現の代わりに使われます。
+- **`MATTER_HUB_CORS_STRICT=1`** — 本番向け。上記の広い正規表現を無効にします。
+
+API を更新したら **uvicorn を再起動**してください。
+
+本番で単一ポートにまとめる場合は、リバースプロキシ（例: nginx）で `/` を静的ビルド（`frontend/dist`）、`/api` を uvicorn に振り分ける構成が一般的です。
+
+### Docker Compose（API + フロント）
+
+```bash
 docker compose up -d
+```
 
-# http://localhost:8000 を開く
+- API（ホストから直接叩く場合）: `http://localhost:8001`
+- フロント: `http://localhost:5173`（コンテナ内で `npm install` のあと Vite dev）。Compose では **`VITE_API_PROXY_TARGET=http://api:8000`** のため、ブラウザは **`/api` を Vite 経由**で API に届けます（`VITE_API_BASE_URL` は不要）。
 
-# 停止
+```bash
 docker compose down
 ```
 
 - DBファイル (`data/matter-hub.db`) はCLIとコンテナで共有される。
 - 検索はFTS5 trigram。タグフィルターはAND。
-- `active` (Matterで保存中) / `archived` (Matterでアーカイブ済) / `trash` (ローカル削除) を切替。
+- `active` (Matterで保存中) / `archived` (Matterでアーカイブ済) / `trend` / `trash` (ローカル削除) を切替。
 - `trash` で `restore` すると復元。`active`/`archived` で `delete` するとローカルで非表示、次のsyncでも再importされない。
