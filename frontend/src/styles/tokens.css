@@ -1,0 +1,19 @@
+@theme inline {
+  /* Semantic action button colors — same in light and dark mode */
+  --color-action-primary:       var(--color-indigo-600);
+  --color-action-primary-hover: var(--color-indigo-700);
+  --color-action-danger:        var(--color-red-600);
+  --color-action-danger-hover:  var(--color-red-700);
+  --color-action-confirm:       var(--color-emerald-600);
+  --color-action-confirm-hover: var(--color-emerald-700);
+  --color-action-restore:       var(--color-green-600);
+  --color-action-restore-hover: var(--color-green-700);
+  --color-action-warning:       var(--color-amber-600);
+  --color-action-warning-hover: var(--color-amber-700);
+  --color-action-neutral:       var(--color-gray-600);
+  --color-action-neutral-hover: var(--color-gray-700);
+  --color-nav-active:           var(--color-blue-600);
+
+  /* Z-index layers */
+  --z-modal: 100;
+}
