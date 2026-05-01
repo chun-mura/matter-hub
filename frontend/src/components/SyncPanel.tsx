@@ -58,29 +58,31 @@ export function SyncPanel({
           className={
             running
               ? "px-3 py-1.5 rounded text-sm bg-gray-400 text-white cursor-not-allowed"
-              : "px-3 py-1.5 rounded text-sm bg-emerald-600 text-white hover:bg-emerald-700"
+              : "px-3 py-1.5 rounded text-sm bg-action-confirm text-white hover:bg-action-confirm-hover"
           }
         >
-          {running ? "同期中…" : "sync"}
+          {running ? "同期中…" : "同期"}
         </button>
         {sync.status === "ok" && summary ? (
-          <span className="text-xs text-emerald-700 dark:text-emerald-400">
-            done: {summary.synced} synced
-            {summary.deleted ? `, ${summary.deleted} removed` : ""}
-            {summary.tagged != null ? `, ${summary.tagged} tagged` : ""}
-            {summary.embedded != null ? `, ${summary.embedded} embedded` : ""}
+          <span role="status" className="text-xs text-emerald-700 dark:text-emerald-400">
+            完了: {summary.synced}件同期
+            {summary.deleted ? `、${summary.deleted}件削除` : ""}
+            {summary.tagged != null ? `、${summary.tagged}件タグ付け` : ""}
+            {summary.embedded != null ? `、${summary.embedded}件埋め込み` : ""}
             {summary.titles_translated != null
-              ? `, ${summary.titles_translated} titles→JA`
+              ? `、${summary.titles_translated}件翻訳`
               : ""}
           </span>
         ) : null}
         {sync.status === "error" && sync.error ? (
-          <span className="text-xs text-red-600 dark:text-red-400">error: {sync.error}</span>
+          <span role="alert" className="text-xs text-red-600 dark:text-red-400">
+            エラー: {sync.error}
+          </span>
         ) : null}
       </div>
       {sync.log && sync.log.length > 0 ? (
         <details className="text-xs text-gray-600 dark:text-gray-300" open={running}>
-          <summary className="cursor-pointer select-none">log</summary>
+          <summary className="cursor-pointer select-none">ログ</summary>
           <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap bg-gray-900 dark:bg-gray-950 text-gray-100 rounded p-2">
             {sync.log.join("\n")}
           </pre>

@@ -12,15 +12,49 @@ import {
   type SummaryPanel,
 } from "../api";
 import { useSwipeRow } from "../hooks/useSwipeRow";
+import { ConfirmModal } from "./ui/ConfirmModal";
 
 type Props = {
   article: Article;
   view: string;
   pollingSummarizeId: string | null;
   onSummarizePollingDone: () => void;
-  onMutate: () => void;
+  onMutate: (message?: string) => void;
   onRequestResummarize: (articleId: string) => void;
 };
+
+function ResummarizeButton({
+  disabled,
+  loading,
+  onClick,
+}: {
+  disabled: boolean;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  if (disabled) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="px-3 py-1.5 bg-action-primary text-white rounded opacity-60 cursor-not-allowed"
+        title="環境変数が未登録のため使用できません（再要約には X_BEARER_TOKEN または TWITTER_BEARER_TOKEN の設定が必要です）"
+      >
+        再要約
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded disabled:opacity-70"
+      disabled={loading}
+      onClick={onClick}
+    >
+      再要約
+    </button>
+  );
+}
 
 export function ArticleRow({
   article,
@@ -38,6 +72,7 @@ export function ArticleRow({
   const [summarizeError, setSummarizeError] = useState<string | null>(null);
   const [progressLog, setProgressLog] = useState<string[] | null>(null);
   const [localPolling, setLocalPolling] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const pollingActive = localPolling || pollingSummarizeId === id;
 
@@ -73,24 +108,29 @@ export function ArticleRow({
   }, [pollingActive, id, onMutate, onSummarizePollingDone]);
 
   const onDelete = useCallback(async () => {
-    if (!window.confirm("Delete this article?")) return;
     await postDelete(id);
-    onMutate();
+    onMutate("削除しました");
+  }, [id, onMutate]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    await postDelete(id);
+    setDeleteConfirmOpen(false);
+    onMutate("削除しました");
   }, [id, onMutate]);
 
   const onArchive = useCallback(async () => {
     await postArchive(id);
-    onMutate();
+    onMutate("アーカイブしました");
   }, [id, onMutate]);
 
   const onUnarchive = useCallback(async () => {
     await postUnarchive(id);
-    onMutate();
+    onMutate("アーカイブ解除しました");
   }, [id, onMutate]);
 
   const onRestore = useCallback(async () => {
     await postRestore(id);
-    onMutate();
+    onMutate("復元しました");
   }, [id, onMutate]);
 
   const rowRef = useSwipeRow(id, view, onArchive, onUnarchive, onRestore, onDelete);
@@ -142,11 +182,17 @@ export function ArticleRow({
       data-article-id={id}
       data-view={view}
     >
-      <div className="swipe-bg swipe-bg-left absolute inset-0 flex items-center justify-end pr-4 bg-red-600 text-white font-medium select-none pointer-events-none opacity-0">
-        delete
+      <div
+        aria-hidden="true"
+        className="swipe-bg swipe-bg-left absolute inset-0 flex items-center justify-end pr-4 bg-action-danger text-white font-medium select-none pointer-events-none opacity-0"
+      >
+        削除
       </div>
-      <div className="swipe-bg swipe-bg-right absolute inset-0 flex items-center justify-start pl-4 bg-green-600 text-white font-medium select-none pointer-events-none opacity-0">
-        {view === "archived" ? "unarchive" : view === "trash" ? "restore" : "archive"}
+      <div
+        aria-hidden="true"
+        className="swipe-bg swipe-bg-right absolute inset-0 flex items-center justify-start pl-4 bg-action-restore text-white font-medium select-none pointer-events-none opacity-0"
+      >
+        {view === "archived" ? "アーカイブ解除" : view === "trash" ? "復元" : "アーカイブ"}
       </div>
       <div className="swipe-surface relative bg-white dark:bg-gray-900 p-3">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
@@ -174,68 +220,45 @@ export function ArticleRow({
                   <>
                     <button
                       type="button"
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded"
+                      className="px-3 py-1.5 bg-action-warning hover:bg-action-warning-hover text-white rounded"
                       onClick={() => void closeSummary()}
                     >
                       要約を閉じる
                     </button>
-                    {disabled ? (
-                      <button
-                        type="button"
-                        disabled
-                        className="px-3 py-1.5 bg-indigo-600 text-white rounded opacity-60 cursor-not-allowed"
-                        title="環境変数が未登録のため使用できません（再要約には X_BEARER_TOKEN または TWITTER_BEARER_TOKEN の設定が必要です）"
-                      >
-                        再要約
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded disabled:opacity-70"
-                        disabled={progressLog !== null}
-                        onClick={() => onRequestResummarize(id)}
-                      >
-                        再要約
-                      </button>
-                    )}
+                    <ResummarizeButton
+                      disabled={disabled}
+                      loading={progressLog !== null}
+                      onClick={() => onRequestResummarize(id)}
+                    />
                   </>
                 ) : hasSummary ? (
                   <>
                     <button
                       type="button"
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded"
+                      className="px-3 py-1.5 bg-action-confirm hover:bg-action-confirm-hover text-white rounded"
                       onClick={() => void openSummary()}
                     >
                       要約を見る
                     </button>
-                    {disabled ? (
-                      <button
-                        type="button"
-                        disabled
-                        className="px-3 py-1.5 bg-indigo-600 text-white rounded opacity-60 cursor-not-allowed"
-                        title="環境変数が未登録のため使用できません"
-                      >
-                        再要約
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded disabled:opacity-70"
-                        disabled={progressLog !== null}
-                        onClick={() => onRequestResummarize(id)}
-                      >
-                        再要約
-                      </button>
-                    )}
+                    <ResummarizeButton
+                      disabled={disabled}
+                      loading={progressLog !== null}
+                      onClick={() => onRequestResummarize(id)}
+                    />
                   </>
                 ) : disabled ? (
-                  <button type="button" disabled className="px-3 py-1.5 bg-indigo-600 text-white rounded opacity-60">
+                  <button
+                    type="button"
+                    disabled
+                    className="px-3 py-1.5 bg-action-primary text-white rounded opacity-60"
+                    title="環境変数が未登録のため使用できません"
+                  >
                     要約生成
                   </button>
                 ) : (
                   <button
                     type="button"
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded inline-flex items-center gap-1.5 disabled:opacity-70"
+                    className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded inline-flex items-center gap-1.5 disabled:opacity-70"
                     disabled={progressLog !== null}
                     onClick={() => void startSummarize()}
                   >
@@ -254,36 +277,36 @@ export function ArticleRow({
             {view === "trash" ? (
               <button
                 type="button"
-                className="px-3 py-1.5 bg-green-600 text-white rounded"
+                className="px-3 py-1.5 bg-action-restore hover:bg-action-restore-hover text-white rounded"
                 onClick={() => void onRestore()}
               >
-                restore
+                復元
               </button>
             ) : (
               <>
                 {view === "archived" ? (
                   <button
                     type="button"
-                    className="px-3 py-1.5 bg-green-600 text-white rounded"
+                    className="px-3 py-1.5 bg-action-restore hover:bg-action-restore-hover text-white rounded"
                     onClick={() => void onUnarchive()}
                   >
-                    unarchive
+                    アーカイブ解除
                   </button>
                 ) : view !== "trend" ? (
                   <button
                     type="button"
-                    className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded"
+                    className="px-3 py-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded"
                     onClick={() => void onArchive()}
                   >
-                    archive
+                    アーカイブ
                   </button>
                 ) : null}
                 <button
                   type="button"
-                  className="px-3 py-1.5 bg-red-600 text-white rounded"
-                  onClick={() => void onDelete()}
+                  className="px-3 py-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded"
+                  onClick={() => setDeleteConfirmOpen(true)}
                 >
-                  delete
+                  削除
                 </button>
               </>
             )}
@@ -291,7 +314,9 @@ export function ArticleRow({
         </div>
 
         {summarizeError ? (
-          <p className="mt-2 text-sm text-red-600 dark:text-red-400">{summarizeError}</p>
+          <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+            {summarizeError}
+          </p>
         ) : null}
 
         {progressLog !== null ? (
@@ -300,7 +325,7 @@ export function ArticleRow({
             {progressLog.length > 0 ? (
               <details className="mt-2 text-xs text-gray-600 dark:text-gray-300" open>
                 <summary className="cursor-pointer select-none">ログ</summary>
-                <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap bg-gray-900 dark:bg-gray-950 text-gray-100 rounded p-2 font-mono text-[11px] leading-snug">
+                <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap bg-gray-900 dark:bg-gray-950 text-gray-100 rounded p-2 font-mono text-xs leading-snug">
                   {progressLog.join("\n")}
                 </pre>
               </details>
@@ -323,6 +348,16 @@ export function ArticleRow({
           </div>
         ) : null}
       </div>
+
+      <ConfirmModal
+        open={deleteConfirmOpen}
+        title="記事を削除"
+        description="この記事を削除しますか？取り消しはできません。"
+        confirmLabel="削除する"
+        variant="danger"
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={handleDeleteConfirm}
+      />
     </li>
   );
 }
