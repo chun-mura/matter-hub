@@ -303,20 +303,6 @@ export function ArticleRow({
                 >
                   要約を閉じる
                 </button>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded"
-                  onClick={() => setEditModalOpen(true)}
-                >
-                  編集
-                </button>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded"
-                  onClick={() => setSummaryDeleteConfirmOpen(true)}
-                >
-                  要約を削除
-                </button>
                 <ResummarizeButton
                   disabled={disabled}
                   loading={progressLog !== null}
