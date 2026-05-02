@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Archive, ArchiveX, Check, Copy, RotateCcw, Trash2 } from "lucide-react";
 import {
   deleteSummary,
   getArticleSummary,
@@ -10,13 +11,11 @@ import {
   postSummarizeWithText,
   postSummaryClose,
   postUnarchive,
-  putSummaryManual,
   type Article,
   type SummaryPanel,
 } from "../api";
 import { useSwipeRow } from "../hooks/useSwipeRow";
 import { SummarizeWithTextModal } from "./SummarizeWithTextModal";
-import { SummaryEditModal } from "./SummaryEditModal";
 import { ConfirmModal } from "./ui/ConfirmModal";
 
 type Props = {
@@ -78,9 +77,9 @@ export function ArticleRow({
   const [progressLog, setProgressLog] = useState<string[] | null>(null);
   const [localPolling, setLocalPolling] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [editModalOpen, setEditModalOpen] = useState(false);
   const [summaryDeleteConfirmOpen, setSummaryDeleteConfirmOpen] = useState(false);
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
+  const [summaryCopied, setSummaryCopied] = useState(false);
 
   const pollingActive = localPolling || pollingSummarizeId === id;
 
@@ -178,12 +177,6 @@ export function ArticleRow({
     }
   };
 
-  const handleSaveSummary = async (text: string) => {
-    const p = await putSummaryManual(id, text);
-    setSummaryPanel(p);
-    onMutate();
-  };
-
   const handleSubmitWithText = async (text: string) => {
     setSummarizeError(null);
     try {
@@ -255,36 +248,40 @@ export function ArticleRow({
             {view === "trash" ? (
               <button
                 type="button"
-                className="px-3 py-1.5 bg-action-restore hover:bg-action-restore-hover text-white rounded"
+                title="復元"
+                className="p-1.5 bg-action-restore hover:bg-action-restore-hover text-white rounded"
                 onClick={() => void onRestore()}
               >
-                復元
+                <RotateCcw size={15} aria-hidden="true" />
               </button>
             ) : (
               <>
                 {view === "archived" ? (
                   <button
                     type="button"
-                    className="px-3 py-1.5 bg-action-restore hover:bg-action-restore-hover text-white rounded"
+                    title="アーカイブ解除"
+                    className="p-1.5 bg-action-restore hover:bg-action-restore-hover text-white rounded"
                     onClick={() => void onUnarchive()}
                   >
-                    アーカイブ解除
+                    <ArchiveX size={15} aria-hidden="true" />
                   </button>
                 ) : view !== "trend" ? (
                   <button
                     type="button"
-                    className="px-3 py-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded"
+                    title="アーカイブ"
+                    className="p-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded"
                     onClick={() => void onArchive()}
                   >
-                    アーカイブ
+                    <Archive size={15} aria-hidden="true" />
                   </button>
                 ) : null}
                 <button
                   type="button"
-                  className="px-3 py-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded"
+                  title="削除"
+                  className="p-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded"
                   onClick={() => setDeleteConfirmOpen(true)}
                 >
-                  削除
+                  <Trash2 size={15} aria-hidden="true" />
                 </button>
               </>
             )}
@@ -360,14 +357,6 @@ export function ArticleRow({
                 >
                   本文から要約
                 </button>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded disabled:opacity-70"
-                  disabled={progressLog !== null}
-                  onClick={() => setEditModalOpen(true)}
-                >
-                  手動入力
-                </button>
               </>
             )}
           </div>
@@ -408,17 +397,24 @@ export function ArticleRow({
             <div className="flex gap-2 justify-end pt-1">
               <button
                 type="button"
-                className="px-3 py-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded text-xs"
-                onClick={() => setEditModalOpen(true)}
+                title={summaryCopied ? "コピー済み" : "コピー"}
+                className="p-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded"
+                onClick={() => {
+                  navigator.clipboard.writeText(String(summaryPanel.article.summary ?? "")).then(() => {
+                    setSummaryCopied(true);
+                    setTimeout(() => setSummaryCopied(false), 2000);
+                  });
+                }}
               >
-                編集
+                {summaryCopied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
               </button>
               <button
                 type="button"
-                className="px-3 py-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded text-xs"
+                title="削除"
+                className="p-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded"
                 onClick={() => setSummaryDeleteConfirmOpen(true)}
               >
-                削除
+                <Trash2 size={15} aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -442,12 +438,6 @@ export function ArticleRow({
         variant="danger"
         onClose={() => setSummaryDeleteConfirmOpen(false)}
         onConfirm={handleDeleteSummary}
-      />
-      <SummaryEditModal
-        open={editModalOpen}
-        initialValue={String(summaryPanel?.article?.summary ?? article.summary ?? "")}
-        onClose={() => setEditModalOpen(false)}
-        onSave={handleSaveSummary}
       />
       <SummarizeWithTextModal
         open={pasteModalOpen}
