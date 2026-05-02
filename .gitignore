@@ -6,6 +6,7 @@ __pycache__/
 dist/
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
 .claude/settings.local.json
 **/temp/*
 data/

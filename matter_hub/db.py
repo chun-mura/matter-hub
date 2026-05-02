@@ -180,7 +180,7 @@ class Database:
         source = article.get("source", "matter")
         aid = article["id"]
         existing = self.conn.execute(
-            "SELECT title, title_ja, title_ja_from, created_at FROM articles WHERE id = ?",
+            "SELECT title, title_ja, title_ja_from, created_at, library_state FROM articles WHERE id = ?",
             (aid,),
         ).fetchone()
 
@@ -191,6 +191,9 @@ class Database:
 
         if existing:
             merged["created_at"] = existing["created_at"] or now
+            # ローカルでアーカイブ済みの場合、Matter API 側の library_state で上書きしない
+            if existing["library_state"] == 2:
+                merged["library_state"] = 2
             if existing["title"] != article["title"]:
                 merged["title_ja"] = None
                 merged["title_ja_from"] = None

@@ -237,6 +237,9 @@ def translate_title_articles(
             candidates.append(a)
         elif not a.get("title_ja") or (a.get("title_ja_from") != title):
             candidates.append(a)
+        elif not looks_like_japanese(a.get("title_ja") or ""):
+            # title_ja が保存済みでも日本語に見えない場合は再翻訳
+            candidates.append(a)
 
     if not candidates:
         log("タイトル翻訳対象の記事はありません", level="success")

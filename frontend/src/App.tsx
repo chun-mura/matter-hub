@@ -76,6 +76,9 @@ export default function App() {
   const [resummarizeModalOpen, setResummarizeModalOpen] = useState(false);
   const [resummarizeId, setResummarizeId] = useState<string | null>(null);
   const [pollingSummarizeId, setPollingSummarizeId] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
 
   const tagsKey = selectedTags.join(",");
 
@@ -160,9 +163,12 @@ export default function App() {
     setPage(1);
   };
 
-  const loadMore = async () => {
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMoreRef.current) return;
     const next = page + 1;
     setErr(null);
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
     try {
       const a = await getArticles({
         view,
@@ -175,8 +181,24 @@ export default function App() {
       setHasMore(a.has_more);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "load failed");
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
     }
-  };
+  }, [hasMore, page, view, qApplied, tagsKey]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) void loadMore();
+      },
+      { threshold: 0 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore]);
 
   const onRequestResummarize = (id: string) => {
     setResummarizeId(id);
@@ -290,14 +312,9 @@ export default function App() {
               ))}
             </ul>
           )}
-          {hasMore ? (
-            <button
-              type="button"
-              className="mt-4 px-3 py-1 bg-gray-200 dark:bg-gray-800 dark:text-gray-100 rounded"
-              onClick={() => void loadMore()}
-            >
-              さらに読み込む
-            </button>
+          <div ref={sentinelRef} aria-hidden="true" />
+          {loadingMore ? (
+            <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">読み込み中…</p>
           ) : null}
         </section>
       </div>
