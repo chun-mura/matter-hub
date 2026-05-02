@@ -14,6 +14,53 @@
   --color-action-neutral-hover: var(--color-gray-700);
   --color-nav-active:           var(--color-blue-600);
 
+  /* Dark theme palette — Tailwind utility classes (bg-bg, text-text-pri, etc.) */
+  --color-bg:            #0f1117;
+  --color-bg-surface:    #171b26;
+  --color-bg-card:       #1c2030;
+  --color-bg-card-hover: #212638;
+  --color-bg-subtle:     #232840;
+  --color-border-main:   #2a2f45;
+  --color-border-sub:    #222640;
+  --color-text-pri:      #e8eaf2;
+  --color-text-sec:      #8b90a8;
+  --color-text-muted:    #565d7a;
+  --color-accent:        #5b7fff;
+  --color-accent-hover:  #7090ff;
+  --color-status-green:  #2ecc8a;
+  --color-status-red:    #ff5e6d;
+  --color-status-amber:  #f5a623;
+  --color-tag-bg:        #1e2338;
+  --color-tag-border:    #2a3050;
+
   /* Z-index layers */
   --z-modal: 100;
+}
+
+:root {
+  --bg:              #0f1117;
+  --bg-surface:      #171b26;
+  --bg-card:         #1c2030;
+  --bg-card-hover:   #212638;
+  --bg-subtle:       #232840;
+  --border:          #2a2f45;
+  --border-subtle:   #222640;
+  --text-primary:    #e8eaf2;
+  --text-secondary:  #8b90a8;
+  --text-muted:      #565d7a;
+  --accent:          #5b7fff;
+  --accent-hover:    #7090ff;
+  --accent-dim:      rgba(91, 127, 255, 0.12);
+  --green:           #2ecc8a;
+  --green-dim:       rgba(46, 204, 138, 0.12);
+  --red:             #ff5e6d;
+  --red-dim:         rgba(255, 94, 109, 0.10);
+  --amber:           #f5a623;
+  --amber-dim:       rgba(245, 166, 35, 0.12);
+  --tag-bg:          #1e2338;
+  --tag-bg-active:   rgba(91, 127, 255, 0.18);
+  --tag-border:      #2a3050;
+  --tag-border-active: rgba(91, 127, 255, 0.5);
+  --radius-card:     10px;
+  --radius-btn:      6px;
 }

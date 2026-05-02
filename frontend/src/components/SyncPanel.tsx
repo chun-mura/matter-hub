@@ -49,44 +49,59 @@ export function SyncPanel({
   const summary = sync.summary as Record<string, number | null | undefined> | null;
 
   return (
-    <div className="flex flex-col gap-1 text-sm">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <button
-          type="button"
-          disabled={running}
-          onClick={() => void onClick()}
-          className={
-            running
-              ? "px-3 py-1.5 rounded text-sm bg-gray-400 text-white cursor-not-allowed"
-              : "px-3 py-1.5 rounded text-sm bg-action-confirm text-white hover:bg-action-confirm-hover"
-          }
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <button
+        type="button"
+        disabled={running}
+        onClick={() => void onClick()}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 12,
+          fontWeight: 500,
+          padding: "5px 12px",
+          borderRadius: 6,
+          border: "1px solid var(--border)",
+          cursor: running ? "default" : "pointer",
+          background: "transparent",
+          color: running ? "var(--green)" : "var(--text-secondary)",
+          transition: "color 0.15s",
+        }}
+      >
+        <span
+          style={{
+            display: "inline-flex",
+            animation: running ? "mh-spin 1s linear infinite" : "none",
+          }}
         >
-          {running ? "同期中…" : "同期"}
-        </button>
-        {sync.status === "ok" && summary ? (
-          <span role="status" className="text-xs text-emerald-700 dark:text-emerald-400">
-            完了: {summary.synced}件同期
-            {summary.deleted ? `、${summary.deleted}件削除` : ""}
-            {summary.tagged != null ? `、${summary.tagged}件タグ付け` : ""}
-            {summary.embedded != null ? `、${summary.embedded}件埋め込み` : ""}
-            {summary.titles_translated != null
-              ? `、${summary.titles_translated}件翻訳`
-              : ""}
-          </span>
-        ) : null}
-        {sync.status === "error" && sync.error ? (
-          <span role="alert" className="text-xs text-red-600 dark:text-red-400">
-            エラー: {sync.error}
-          </span>
-        ) : null}
-      </div>
-      {sync.log && sync.log.length > 0 ? (
-        <details className="text-xs text-gray-600 dark:text-gray-300" open={running}>
-          <summary className="cursor-pointer select-none">ログ</summary>
-          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap bg-gray-900 dark:bg-gray-950 text-gray-100 rounded p-2">
-            {sync.log.join("\n")}
-          </pre>
-        </details>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+            <path d="M8 16H3v5" />
+          </svg>
+        </span>
+        {running ? "同期中…" : "同期"}
+      </button>
+      {sync.status === "ok" && summary ? (
+        <span style={{ fontSize: 11, color: "var(--green)" }} role="status">
+          {summary.synced}件同期完了
+        </span>
+      ) : null}
+      {sync.status === "error" && sync.error ? (
+        <span style={{ fontSize: 11, color: "var(--red)" }} role="alert">
+          エラー: {sync.error}
+        </span>
       ) : null}
     </div>
   );

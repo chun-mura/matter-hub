@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Archive, ArchiveX, Check, Copy, RotateCcw, Trash2 } from "lucide-react";
+import type React from "react";
+import { Check, Copy, ExternalLink, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import {
   deleteSummary,
   getArticleSummary,
@@ -28,6 +29,97 @@ type Props = {
   onRequestResummarize: (articleId: string) => void;
 };
 
+const SOURCE_COLORS: Record<string, string> = {
+  "x.com":           "#1a8cd8",
+  "note.com":        "#4cc38a",
+  "Qiita":           "#55c500",
+  "zenn.dev":        "#3ea8ff",
+  "speakerdeck.com": "#45a562",
+  "oreilly.co.jp":   "#d44000",
+  "scrapbox.io":     "#00A676",
+};
+
+function getSourceColor(source: string | null | undefined): string {
+  if (!source) return "var(--text-muted)";
+  return SOURCE_COLORS[source] ?? "var(--text-muted)";
+}
+
+const iconBtnStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  padding: "4px 5px",
+  borderRadius: 5,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "var(--text-muted)",
+  transition: "color 0.12s",
+};
+
+const primaryBtnStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  fontSize: 12,
+  fontWeight: 500,
+  padding: "5px 12px",
+  borderRadius: 6,
+  border: "none",
+  cursor: "pointer",
+  background: "var(--accent)",
+  color: "#fff",
+  transition: "opacity 0.15s, background 0.15s",
+};
+
+const closeBtnStyle: React.CSSProperties = {
+  ...primaryBtnStyle,
+  background: "var(--accent-dim)",
+  color: "var(--accent)",
+};
+
+const ghostBtnStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  fontSize: 12,
+  fontWeight: 500,
+  padding: "5px 11px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  cursor: "pointer",
+  background: "transparent",
+  color: "var(--text-secondary)",
+  transition: "background 0.12s, border-color 0.12s",
+};
+
+const TITLE_TRUNCATE = 80;
+
+function SummaryBadge({ hasSummary }: { hasSummary: boolean }) {
+  if (hasSummary) {
+    return (
+      <span style={{
+        fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+        color: "var(--green)", background: "var(--green-dim)",
+        border: "1px solid rgba(46,204,138,0.25)",
+        padding: "1px 7px", borderRadius: 20, whiteSpace: "nowrap",
+      }}>
+        要約済
+      </span>
+    );
+  }
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+      color: "var(--text-muted)", background: "rgba(255,255,255,0.04)",
+      border: "1px solid var(--border-subtle)",
+      padding: "1px 7px", borderRadius: 20, whiteSpace: "nowrap",
+    }}>
+      未要約
+    </span>
+  );
+}
+
 function ResummarizeButton({
   disabled,
   loading,
@@ -42,7 +134,7 @@ function ResummarizeButton({
       <button
         type="button"
         disabled
-        className="px-3 py-1.5 bg-action-primary text-white rounded opacity-60 cursor-not-allowed"
+        style={{ ...ghostBtnStyle, opacity: 0.5, cursor: "not-allowed" }}
         title="環境変数が未登録のため使用できません（再要約には X_BEARER_TOKEN または TWITTER_BEARER_TOKEN の設定が必要です）"
       >
         再要約
@@ -52,7 +144,7 @@ function ResummarizeButton({
   return (
     <button
       type="button"
-      className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded disabled:opacity-70"
+      style={{ ...ghostBtnStyle, opacity: loading ? 0.7 : 1 }}
       disabled={loading}
       onClick={onClick}
     >
@@ -74,6 +166,11 @@ export function ArticleRow({
   const disabled = Boolean(article.x_summarize_disabled);
   const isBulkProcessing = bulkCurrentId === id;
   const displayTitle = (article.title_ja as string | null | undefined) || article.title || "";
+  const publisher = article.publisher as string | null | undefined;
+  const author = article.author as string | null | undefined;
+  const publishedDate = article.published_date as string | null | undefined;
+  const articleTags = article.tags as string[] | undefined;
+  const hasSummaryData = Boolean(article.summary);
 
   const [summaryPanel, setSummaryPanel] = useState<SummaryPanel | null>(null);
   const [summarizeError, setSummarizeError] = useState<string | null>(null);
@@ -83,6 +180,8 @@ export function ArticleRow({
   const [summaryDeleteConfirmOpen, setSummaryDeleteConfirmOpen] = useState(false);
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
   const [summaryCopied, setSummaryCopied] = useState(false);
+  const [titleExpanded, setTitleExpanded] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
   const pollingActive = localPolling || pollingSummarizeId === id;
 
@@ -98,8 +197,7 @@ export function ArticleRow({
         }
         if (st.job?.status === "queued") {
           const pos = st.job.queue_position ?? 0;
-          const waitLabel =
-            pos === 0 ? "次にこの記事を処理します" : `キューで待機中（先に ${pos} 件）`;
+          const waitLabel = pos === 0 ? "次にこの記事を処理します" : `キューで待機中（先に ${pos} 件）`;
           setProgressLog([`[${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}] ${waitLabel}`]);
           setSummarizeError(null);
           return;
@@ -220,103 +318,226 @@ export function ArticleRow({
   };
 
   const summaryOpen = summaryPanel?.summary_open === true;
-  const hasSummary = Boolean(article.summary) || Boolean(summaryPanel?.article?.summary);
+  const hasSummary = hasSummaryData || Boolean(summaryPanel?.article?.summary);
   const showExpandedSummary = Boolean(summaryOpen && summaryPanel);
+
+  const truncatedTitle = displayTitle.length > TITLE_TRUNCATE && !titleExpanded
+    ? displayTitle.slice(0, TITLE_TRUNCATE) + "…"
+    : displayTitle;
+
+  const isTrash = view === "trash";
 
   return (
     <li
       ref={rowRef}
-      className="article-row relative overflow-hidden border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+      className="article-row"
       id={`row-${id}`}
       data-article-id={id}
       data-view={view}
+      style={{ position: "relative", overflow: "hidden", borderRadius: "var(--radius-card)", listStyle: "none" }}
     >
+      {/* Swipe action backgrounds */}
       <div
         aria-hidden="true"
-        className="swipe-bg swipe-bg-left absolute inset-0 flex items-center justify-end pr-4 bg-action-danger text-white font-medium select-none pointer-events-none opacity-0"
+        className="swipe-bg swipe-bg-left"
+        style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 16, background: "var(--red)", color: "#fff", fontWeight: 500, userSelect: "none", pointerEvents: "none", opacity: 0 }}
       >
         削除
       </div>
       <div
         aria-hidden="true"
-        className="swipe-bg swipe-bg-right absolute inset-0 flex items-center justify-start pl-4 bg-action-restore text-white font-medium select-none pointer-events-none opacity-0"
+        className="swipe-bg swipe-bg-right"
+        style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "flex-start", paddingLeft: 16, background: "var(--green)", color: "#fff", fontWeight: 500, userSelect: "none", pointerEvents: "none", opacity: 0 }}
       >
         {view === "archived" ? "アーカイブ解除" : view === "trash" ? "復元" : "アーカイブ"}
       </div>
-      <div className="swipe-surface relative bg-white dark:bg-gray-900 p-3">
-        {/* 上段: タイトル・メタ情報 + 記事操作ボタン */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <a
-              className="font-medium text-blue-700 dark:text-blue-400 hover:underline break-words text-base leading-snug"
-              href={article.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {displayTitle}
-            </a>
-            <div className="text-sm sm:text-xs text-gray-500 dark:text-gray-400 mt-1 break-words">
-              {article.author ? String(article.author) : ""}
-              {article.publisher ? ` · ${String(article.publisher)}` : ""}
-              {article.published_date
-                ? ` · ${String(article.published_date).slice(0, 10)}`
-                : ""}
-            </div>
-          </div>
-          <div className="text-sm sm:text-xs flex gap-2 sm:shrink-0 self-end sm:self-start flex-wrap justify-end">
-            {view === "trash" ? (
-              <button
-                type="button"
-                title="復元"
-                className="p-1.5 bg-action-restore hover:bg-action-restore-hover text-white rounded"
-                onClick={() => void onRestore()}
-              >
-                <RotateCcw size={15} aria-hidden="true" />
+
+      {/* Card surface */}
+      <div
+        className="swipe-surface"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          position: "relative",
+          background: hovered ? "var(--bg-card-hover)" : "var(--bg-card)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: "var(--radius-card)",
+          padding: "16px 18px",
+          transition: "background 0.15s, border-color 0.15s",
+          cursor: "default",
+        }}
+      >
+        {/* Top row: source meta + badge + actions */}
+        <div className="mh-article-top-row" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "nowrap", minWidth: 0 }}>
+          {/* Source dot */}
+          <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: getSourceColor(publisher), flexShrink: 0, marginTop: 1 }} />
+
+          {/* Author */}
+          {author && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }}>
+              {author}
+            </span>
+          )}
+          {author && <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>·</span>}
+
+          {/* Publisher */}
+          <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
+            {publisher || ""}
+          </span>
+
+          {/* Date */}
+          {publishedDate && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap", flexShrink: 0 }}>
+              · {String(publishedDate).slice(0, 10)}
+            </span>
+          )}
+
+          <span style={{ flex: "1 1 0", minWidth: 0 }} />
+
+          {/* Summary badge */}
+          <SummaryBadge hasSummary={hasSummary} />
+
+          {/* Action icon buttons */}
+          <div style={{ display: "flex", gap: 4, marginLeft: 4 }}>
+            {isTrash ? (
+              <button onClick={() => void onRestore()} title="元に戻す" style={{ ...iconBtnStyle, color: "var(--green)" }}>
+                <RotateCcw size={13} />
               </button>
             ) : (
               <>
                 {view === "archived" ? (
-                  <button
-                    type="button"
-                    title="アーカイブ解除"
-                    className="p-1.5 bg-action-restore hover:bg-action-restore-hover text-white rounded"
-                    onClick={() => void onUnarchive()}
-                  >
-                    <ArchiveX size={15} aria-hidden="true" />
+                  <button onClick={() => void onUnarchive()} title="アーカイブ解除" style={{ ...iconBtnStyle, color: "var(--text-muted)" }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="3" width="20" height="5" rx="1"/>
+                      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/>
+                      <path d="M10 12h4"/>
+                      <line x1="12" y1="12" x2="12" y2="18"/>
+                    </svg>
                   </button>
                 ) : view !== "trend" ? (
-                  <button
-                    type="button"
-                    title="アーカイブ"
-                    className="p-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded"
-                    onClick={() => void onArchive()}
-                  >
-                    <Archive size={15} aria-hidden="true" />
+                  <button onClick={() => void onArchive()} title="アーカイブ" style={iconBtnStyle}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="3" width="20" height="5" rx="1"/>
+                      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/>
+                      <path d="M10 12h4"/>
+                    </svg>
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  title="削除"
-                  className="p-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded"
-                  onClick={() => setDeleteConfirmOpen(true)}
-                >
-                  <Trash2 size={15} aria-hidden="true" />
+                <button onClick={() => setDeleteConfirmOpen(true)} title="ゴミ箱" style={iconBtnStyle}>
+                  <Trash2 size={13} />
                 </button>
               </>
             )}
           </div>
         </div>
 
-        {/* 下段: 要約操作ボタン */}
-        {view === "active" || view === "archived" ? (
-          <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 flex flex-wrap gap-2 items-center justify-end text-sm sm:text-xs">
+        {/* Title */}
+        <div style={{ marginBottom: 6 }}>
+          <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", lineHeight: 1.65, display: "inline" }}>
+            {truncatedTitle}
+          </span>
+          {displayTitle.length > TITLE_TRUNCATE && (
+            <button
+              onClick={() => setTitleExpanded((v) => !v)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 12, marginLeft: 4, padding: 0, display: "inline" }}
+            >
+              {titleExpanded ? "折りたたむ" : "続きを見る"}
+            </button>
+          )}
+          {article.url && (
+            <a
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="元ページを開く"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", color: "var(--accent)", marginLeft: 4, textDecoration: "none", opacity: 0.75, padding: "4px 6px", borderRadius: 5, minWidth: 28, minHeight: 28, transition: "opacity 0.12s, background 0.12s", verticalAlign: "middle" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = "1"; (e.currentTarget as HTMLElement).style.background = "var(--accent-dim)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = "0.75"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+            >
+              <ExternalLink size={14} />
+            </a>
+          )}
+        </div>
+
+        {/* Tags */}
+        {articleTags && articleTags.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
+            {articleTags.map((tag) => (
+              <span key={tag} style={{ fontSize: 11, color: "var(--text-secondary)", background: "var(--tag-bg)", border: "1px solid var(--tag-border)", borderRadius: 20, padding: "1px 8px", cursor: "default" }}>
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Summarize error */}
+        {summarizeError ? (
+          <p role="alert" style={{ marginTop: 8, fontSize: 13, color: "var(--red)" }}>
+            {summarizeError}
+          </p>
+        ) : null}
+
+        {/* Progress log */}
+        {progressLog !== null ? (
+          <div style={{ marginTop: 8, borderRadius: 7, border: "1px solid rgba(245,166,35,0.2)", background: "rgba(245,166,35,0.08)", padding: "10px 12px", fontSize: 13 }}>
+            <div style={{ color: "var(--amber)", fontWeight: 500, marginBottom: 4 }}>要約を実行しています…</div>
+            {progressLog.length > 0 ? (
+              <details style={{ fontSize: 11, color: "var(--text-secondary)" }} open>
+                <summary style={{ cursor: "pointer", userSelect: "none" }}>ログ</summary>
+                <pre style={{ marginTop: 4, maxHeight: 192, overflowY: "auto", whiteSpace: "pre-wrap", background: "rgba(0,0,0,0.3)", borderRadius: 4, padding: "6px 8px", fontFamily: "monospace", fontSize: 11, lineHeight: 1.5 }}>
+                  {progressLog.join("\n")}
+                </pre>
+              </details>
+            ) : (
+              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>ログを準備しています…</p>
+            )}
+          </div>
+        ) : null}
+
+        {/* Expanded summary */}
+        {showExpandedSummary && summaryPanel ? (
+          <div style={{ marginTop: 8, padding: "10px 12px", background: "rgba(91,127,255,0.07)", border: "1px solid rgba(91,127,255,0.18)", borderRadius: 7, fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "var(--accent)", marginBottom: 5, textTransform: "uppercase" }}>
+              AI要約
+            </div>
+            <p style={{ whiteSpace: "pre-wrap" }}>{String(summaryPanel.article.summary ?? "")}</p>
+            {summaryPanel.article.summary_model ? (
+              <p style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)" }}>
+                model: {String(summaryPanel.article.summary_model)}
+              </p>
+            ) : null}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+              <button
+                type="button"
+                title={summaryCopied ? "コピー済み" : "コピー"}
+                style={iconBtnStyle}
+                onClick={() => {
+                  navigator.clipboard.writeText(String(summaryPanel.article.summary ?? "")).then(() => {
+                    setSummaryCopied(true);
+                    setTimeout(() => setSummaryCopied(false), 2000);
+                  });
+                }}
+              >
+                {summaryCopied ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+              <button
+                type="button"
+                title="要約を削除"
+                style={{ ...iconBtnStyle, color: "var(--red)" }}
+                onClick={() => setSummaryDeleteConfirmOpen(true)}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Bottom action row */}
+        {!isTrash && (view === "active" || view === "archived" || view === "trend") ? (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
             {hasSummary && summaryOpen ? (
               <>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 bg-action-warning hover:bg-action-warning-hover text-white rounded"
-                  onClick={() => void closeSummary()}
-                >
+                <button onClick={() => void closeSummary()} style={closeBtnStyle}>
                   要約を閉じる
                 </button>
                 <ResummarizeButton
@@ -327,11 +548,8 @@ export function ArticleRow({
               </>
             ) : hasSummary ? (
               <>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 bg-action-confirm hover:bg-action-confirm-hover text-white rounded"
-                  onClick={() => void openSummary()}
-                >
+                <button onClick={() => void openSummary()} style={primaryBtnStyle}>
+                  <Sparkles size={12} />
                   要約を見る
                 </button>
                 <ResummarizeButton
@@ -346,7 +564,7 @@ export function ArticleRow({
                   <button
                     type="button"
                     disabled
-                    className="px-3 py-1.5 bg-action-primary text-white rounded opacity-60"
+                    style={{ ...primaryBtnStyle, opacity: 0.5, cursor: "not-allowed" }}
                     title="環境変数が未登録のため使用できません"
                   >
                     要約生成
@@ -354,17 +572,17 @@ export function ArticleRow({
                 ) : (
                   <button
                     type="button"
-                    className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded inline-flex items-center gap-1.5 disabled:opacity-70"
+                    style={{ ...primaryBtnStyle, opacity: progressLog !== null || isBulkProcessing ? 0.7 : 1 }}
                     disabled={progressLog !== null || isBulkProcessing}
                     onClick={() => void startSummarize()}
                   >
                     {progressLog !== null || isBulkProcessing ? (
                       <>
                         <span className="summary-spinner" aria-hidden="true" />
-                        生成中...
+                        生成中…
                       </>
                     ) : (
-                      "要約生成"
+                      <><Sparkles size={12} /> 要約生成</>
                     )}
                   </button>
                 )}
@@ -372,7 +590,7 @@ export function ArticleRow({
                   <button
                     type="button"
                     disabled={progressLog !== null}
-                    className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded disabled:opacity-70"
+                    style={{ ...ghostBtnStyle, opacity: progressLog !== null ? 0.7 : 1 }}
                     onClick={() => setPasteModalOpen(true)}
                   >
                     本文から要約
@@ -380,64 +598,6 @@ export function ArticleRow({
                 ) : null}
               </>
             )}
-          </div>
-        ) : null}
-
-        {summarizeError ? (
-          <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
-            {summarizeError}
-          </p>
-        ) : null}
-
-        {progressLog !== null ? (
-          <div className="mt-2 rounded border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 p-2 text-sm">
-            <div className="text-gray-800 dark:text-gray-100 font-medium">要約を実行しています…</div>
-            {progressLog.length > 0 ? (
-              <details className="mt-2 text-xs text-gray-600 dark:text-gray-300" open>
-                <summary className="cursor-pointer select-none">ログ</summary>
-                <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap bg-gray-900 dark:bg-gray-950 text-gray-100 rounded p-2 font-mono text-xs leading-snug">
-                  {progressLog.join("\n")}
-                </pre>
-              </details>
-            ) : (
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">ログを準備しています…</p>
-            )}
-          </div>
-        ) : null}
-
-        {showExpandedSummary && summaryPanel ? (
-          <div className="mt-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/80 p-3 text-sm space-y-2">
-            <p className="text-gray-800 dark:text-gray-100 whitespace-pre-wrap">
-              {String(summaryPanel.article.summary ?? "")}
-            </p>
-            {summaryPanel.article.summary_model ? (
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                model: {String(summaryPanel.article.summary_model)}
-              </p>
-            ) : null}
-            <div className="flex gap-2 justify-end pt-1">
-              <button
-                type="button"
-                title={summaryCopied ? "コピー済み" : "コピー"}
-                className="p-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded"
-                onClick={() => {
-                  navigator.clipboard.writeText(String(summaryPanel.article.summary ?? "")).then(() => {
-                    setSummaryCopied(true);
-                    setTimeout(() => setSummaryCopied(false), 2000);
-                  });
-                }}
-              >
-                {summaryCopied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
-              </button>
-              <button
-                type="button"
-                title="削除"
-                className="p-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded"
-                onClick={() => setSummaryDeleteConfirmOpen(true)}
-              >
-                <Trash2 size={15} aria-hidden="true" />
-              </button>
-            </div>
           </div>
         ) : null}
       </div>

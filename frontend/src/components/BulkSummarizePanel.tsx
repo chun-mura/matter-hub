@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   getSummarizeQueue,
   postSummarizeAll,
@@ -6,15 +6,20 @@ import {
   type QueueSnapshot,
 } from "../api";
 
-export function BulkSummarizePanel({
-  onDone,
-  onProgress,
-  onCurrentIdChange,
-}: {
-  onDone?: () => void;
-  onProgress?: () => void;
-  onCurrentIdChange?: (id: string | null) => void;
-}) {
+export type BulkSummarizePanelHandle = {
+  start: () => Promise<void>;
+  running: boolean;
+};
+
+export const BulkSummarizePanel = forwardRef<
+  BulkSummarizePanelHandle,
+  {
+    onDone?: () => void;
+    onProgress?: () => void;
+    onCurrentIdChange?: (id: string | null) => void;
+    onUnsummarizedCountChange?: (count: number) => void;
+  }
+>(function BulkSummarizePanel({ onDone, onProgress, onCurrentIdChange, onUnsummarizedCountChange }, ref) {
   const [snap, setSnap] = useState<QueueSnapshot | null>(null);
   const [statusMessage, setStatusMessage] = useState<{
     tone: "error" | "info";
@@ -68,6 +73,11 @@ export function BulkSummarizePanel({
     onCurrentIdChange?.(id);
   }, [snap?.current_id, snap?.running, snap?.bulk_active, onCurrentIdChange]);
 
+  useEffect(() => {
+    if (snap?.unsummarized_count == null) return;
+    onUnsummarizedCountChange?.(snap.unsummarized_count);
+  }, [snap?.unsummarized_count, onUnsummarizedCountChange]);
+
   const handleStart = async () => {
     setStatusMessage(null);
     try {
@@ -103,77 +113,54 @@ export function BulkSummarizePanel({
   };
 
   const running = snap?.running ?? false;
+
+  useImperativeHandle(ref, () => ({
+    start: handleStart,
+    running,
+  }), [running]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const bulkActive = snap?.bulk_active ?? false;
   const total = snap?.total ?? 0;
   const done = snap?.done ?? 0;
-  const unsummarized = snap?.unsummarized_count ?? null;
   const showBulkFraction = running && bulkActive && total > 0;
   const isDone = !running && total > 0 && done >= total;
-  const buttonDisabled = running || unsummarized === 0;
+
+  if (!running && !isDone && !statusMessage) return null;
 
   return (
-    <div className="flex flex-col gap-1 text-sm">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <button
-          type="button"
-          disabled={buttonDisabled}
-          title="未要約をキューに入れて順に実行します。既にキューに並んでいる手動の要約は、この操作で置き換えられます。"
-          onClick={() => void handleStart()}
-          className={
-            buttonDisabled
-              ? "px-3 py-1.5 rounded text-sm bg-gray-400 text-white cursor-not-allowed"
-              : "px-3 py-1.5 rounded text-sm bg-action-confirm text-white hover:bg-action-confirm-hover"
-          }
-        >
-          未要約を一括要約
-        </button>
-        {!running && snap !== null ? (
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {(snap.unsummarized_count ?? 0) > 0
-              ? `未要約 ${snap.unsummarized_count}件`
-              : "すべて要約済み"}
-          </span>
-        ) : null}
-        {running ? (
-          <>
-            {showBulkFraction ? (
-              <span role="status" className="text-gray-600 dark:text-gray-300">
-                {done}/{total} 件
-                {snap?.current_title ? ` — ${snap.current_title}` : ""}
-              </span>
-            ) : (
-              <span role="status" className="text-gray-600 dark:text-gray-300">
-                要約を実行中です
-                {snap?.current_title ? `（${snap.current_title}）` : ""}
-              </span>
-            )}
-            <button
-              type="button"
-              aria-label="キューに残っている未実行の要約を破棄する"
-              onClick={() => void handleCancel()}
-              className="px-2 py-1 rounded text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
-            >
-              キャンセル
-            </button>
-          </>
-        ) : isDone ? (
-          <span role="status" className="text-xs text-emerald-700 dark:text-emerald-400">
-            {done}件の要約が完了しました
-          </span>
-        ) : null}
-      </div>
+    <div style={{ fontSize: 12, color: "var(--text-secondary)", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 12px", marginBottom: 8 }}>
+      {running ? (
+        <>
+          {showBulkFraction ? (
+            <span role="status">
+              一括要約中… {done}/{total}件
+              {snap?.current_title ? ` — ${snap.current_title}` : ""}
+            </span>
+          ) : (
+            <span role="status">
+              要約を実行中です{snap?.current_title ? `（${snap.current_title}）` : ""}
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label="キューに残っている未実行の要約を破棄する"
+            onClick={() => void handleCancel()}
+            style={{ fontSize: 11, padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}
+          >
+            キャンセル
+          </button>
+        </>
+      ) : isDone ? (
+        <span role="status" style={{ color: "var(--green)" }}>{done}件の要約が完了しました</span>
+      ) : null}
       {statusMessage ? (
         <p
           role={statusMessage.tone === "error" ? "alert" : "status"}
-          className={
-            statusMessage.tone === "error"
-              ? "text-xs text-red-600 dark:text-red-400"
-              : "text-xs text-gray-600 dark:text-gray-400"
-          }
+          style={{ fontSize: 12, color: statusMessage.tone === "error" ? "var(--red)" : "var(--text-muted)", margin: 0 }}
         >
           {statusMessage.text}
         </p>
       ) : null}
     </div>
   );
-}
+});
