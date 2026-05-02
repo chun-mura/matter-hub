@@ -7,6 +7,7 @@ import os
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from matter_hub.importer import x_summarize_button_disabled_without_bearer
 from matter_hub.webapp.helpers import (
@@ -20,6 +21,10 @@ from matter_hub.webapp.summarize_runner import runner as summarize_runner
 from matter_hub.webapp.sync_runner import runner as sync_runner
 
 router = APIRouter(prefix="/api", tags=["api"])
+
+
+class SummaryBody(BaseModel):
+    summary: str
 
 
 def _cors_origins() -> list[str]:
@@ -232,6 +237,34 @@ def api_close_article_summary(article_id: str) -> JSONResponse:
     if not row:
         raise HTTPException(status_code=404)
     return _json(_summary_panel(row, error=None, summary_open=False))
+
+
+@router.put("/articles/{article_id}/summary")
+def api_update_summary_manual(article_id: str, body: SummaryBody) -> JSONResponse:
+    db = web_db()
+    try:
+        row_check = db.conn.execute("SELECT id FROM articles WHERE id = ?", (article_id,)).fetchone()
+        if not row_check:
+            raise HTTPException(status_code=404)
+        db.update_article_summary(article_id, body.summary.strip(), "manual")
+        row = article_summary_row(db, article_id)
+    finally:
+        db.close()
+    if not row:
+        raise HTTPException(status_code=500)
+    return _json(_summary_panel(row, error=None, summary_open=True))
+
+
+@router.delete("/articles/{article_id}/summary")
+def api_delete_summary(article_id: str) -> JSONResponse:
+    db = web_db()
+    try:
+        ok = db.clear_article_summary(article_id)
+    finally:
+        db.close()
+    if not ok:
+        raise HTTPException(status_code=404)
+    return _json({"ok": True})
 
 
 @router.post("/articles/{article_id}/summarize")

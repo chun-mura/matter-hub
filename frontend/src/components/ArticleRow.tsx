@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  deleteSummary,
   getArticleSummary,
   getSummarizeStatus,
   postArchive,
@@ -8,10 +9,12 @@ import {
   postSummarize,
   postSummaryClose,
   postUnarchive,
+  putSummaryManual,
   type Article,
   type SummaryPanel,
 } from "../api";
 import { useSwipeRow } from "../hooks/useSwipeRow";
+import { SummaryEditModal } from "./SummaryEditModal";
 import { ConfirmModal } from "./ui/ConfirmModal";
 
 type Props = {
@@ -73,6 +76,8 @@ export function ArticleRow({
   const [progressLog, setProgressLog] = useState<string[] | null>(null);
   const [localPolling, setLocalPolling] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [summaryDeleteConfirmOpen, setSummaryDeleteConfirmOpen] = useState(false);
 
   const pollingActive = localPolling || pollingSummarizeId === id;
 
@@ -170,8 +175,21 @@ export function ArticleRow({
     }
   };
 
+  const handleSaveSummary = async (text: string) => {
+    const p = await putSummaryManual(id, text);
+    setSummaryPanel(p);
+    onMutate();
+  };
+
+  const handleDeleteSummary = async () => {
+    await deleteSummary(id);
+    setSummaryPanel(null);
+    setSummaryDeleteConfirmOpen(false);
+    onMutate();
+  };
+
   const summaryOpen = summaryPanel?.summary_open === true;
-  const hasSummary = Boolean(article.summary);
+  const hasSummary = Boolean(article.summary) || Boolean(summaryPanel?.article?.summary);
   const showExpandedSummary = Boolean(summaryOpen && summaryPanel);
 
   return (
@@ -195,6 +213,7 @@ export function ArticleRow({
         {view === "archived" ? "アーカイブ解除" : view === "trash" ? "復元" : "アーカイブ"}
       </div>
       <div className="swipe-surface relative bg-white dark:bg-gray-900 p-3">
+        {/* 上段: タイトル・メタ情報 + 記事操作ボタン */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
           <div className="min-w-0 flex-1">
             <a
@@ -214,66 +233,6 @@ export function ArticleRow({
             </div>
           </div>
           <div className="text-sm sm:text-xs flex gap-2 sm:shrink-0 self-end sm:self-start flex-wrap justify-end">
-            {view === "active" ? (
-              <div className="flex flex-wrap gap-2 items-center justify-end">
-                {hasSummary && summaryOpen ? (
-                  <>
-                    <button
-                      type="button"
-                      className="px-3 py-1.5 bg-action-warning hover:bg-action-warning-hover text-white rounded"
-                      onClick={() => void closeSummary()}
-                    >
-                      要約を閉じる
-                    </button>
-                    <ResummarizeButton
-                      disabled={disabled}
-                      loading={progressLog !== null}
-                      onClick={() => onRequestResummarize(id)}
-                    />
-                  </>
-                ) : hasSummary ? (
-                  <>
-                    <button
-                      type="button"
-                      className="px-3 py-1.5 bg-action-confirm hover:bg-action-confirm-hover text-white rounded"
-                      onClick={() => void openSummary()}
-                    >
-                      要約を見る
-                    </button>
-                    <ResummarizeButton
-                      disabled={disabled}
-                      loading={progressLog !== null}
-                      onClick={() => onRequestResummarize(id)}
-                    />
-                  </>
-                ) : disabled ? (
-                  <button
-                    type="button"
-                    disabled
-                    className="px-3 py-1.5 bg-action-primary text-white rounded opacity-60"
-                    title="環境変数が未登録のため使用できません"
-                  >
-                    要約生成
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded inline-flex items-center gap-1.5 disabled:opacity-70"
-                    disabled={progressLog !== null}
-                    onClick={() => void startSummarize()}
-                  >
-                    {progressLog !== null ? (
-                      <>
-                        <span className="summary-spinner" aria-hidden="true" />
-                        生成中...
-                      </>
-                    ) : (
-                      "要約生成"
-                    )}
-                  </button>
-                )}
-              </div>
-            ) : null}
             {view === "trash" ? (
               <button
                 type="button"
@@ -313,6 +272,94 @@ export function ArticleRow({
           </div>
         </div>
 
+        {/* 下段: 要約操作ボタン (active ビューのみ) */}
+        {view === "active" ? (
+          <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 flex flex-wrap gap-2 items-center justify-end text-sm sm:text-xs">
+            {hasSummary && summaryOpen ? (
+              <>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-action-warning hover:bg-action-warning-hover text-white rounded"
+                  onClick={() => void closeSummary()}
+                >
+                  要約を閉じる
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded"
+                  onClick={() => setEditModalOpen(true)}
+                >
+                  編集
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded"
+                  onClick={() => setSummaryDeleteConfirmOpen(true)}
+                >
+                  要約を削除
+                </button>
+                <ResummarizeButton
+                  disabled={disabled}
+                  loading={progressLog !== null}
+                  onClick={() => onRequestResummarize(id)}
+                />
+              </>
+            ) : hasSummary ? (
+              <>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-action-confirm hover:bg-action-confirm-hover text-white rounded"
+                  onClick={() => void openSummary()}
+                >
+                  要約を見る
+                </button>
+                <ResummarizeButton
+                  disabled={disabled}
+                  loading={progressLog !== null}
+                  onClick={() => onRequestResummarize(id)}
+                />
+              </>
+            ) : (
+              <>
+                {disabled ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="px-3 py-1.5 bg-action-primary text-white rounded opacity-60"
+                    title="環境変数が未登録のため使用できません"
+                  >
+                    要約生成
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded inline-flex items-center gap-1.5 disabled:opacity-70"
+                    disabled={progressLog !== null}
+                    onClick={() => void startSummarize()}
+                  >
+                    {progressLog !== null ? (
+                      <>
+                        <span className="summary-spinner" aria-hidden="true" />
+                        生成中...
+                      </>
+                    ) : (
+                      "要約生成"
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded disabled:opacity-70"
+                  disabled={progressLog !== null}
+                  onClick={() => setEditModalOpen(true)}
+                >
+                  手動入力
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
+
         {summarizeError ? (
           <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
             {summarizeError}
@@ -345,6 +392,22 @@ export function ArticleRow({
                 model: {String(summaryPanel.article.summary_model)}
               </p>
             ) : null}
+            <div className="flex gap-2 justify-end pt-1">
+              <button
+                type="button"
+                className="px-3 py-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded text-xs"
+                onClick={() => setEditModalOpen(true)}
+              >
+                編集
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 bg-action-danger hover:bg-action-danger-hover text-white rounded text-xs"
+                onClick={() => setSummaryDeleteConfirmOpen(true)}
+              >
+                削除
+              </button>
+            </div>
           </div>
         ) : null}
       </div>
@@ -357,6 +420,21 @@ export function ArticleRow({
         variant="danger"
         onClose={() => setDeleteConfirmOpen(false)}
         onConfirm={handleDeleteConfirm}
+      />
+      <ConfirmModal
+        open={summaryDeleteConfirmOpen}
+        title="要約を削除"
+        description="この記事の要約を削除しますか？取り消しはできません。"
+        confirmLabel="削除する"
+        variant="danger"
+        onClose={() => setSummaryDeleteConfirmOpen(false)}
+        onConfirm={handleDeleteSummary}
+      />
+      <SummaryEditModal
+        open={editModalOpen}
+        initialValue={String(summaryPanel?.article?.summary ?? article.summary ?? "")}
+        onClose={() => setEditModalOpen(false)}
+        onSave={handleSaveSummary}
       />
     </li>
   );

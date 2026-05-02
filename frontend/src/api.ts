@@ -190,3 +190,20 @@ export async function getSummarizeStatus(articleId: string): Promise<SummarizeSt
   );
   return parseJson<SummarizeStatusResult>(r);
 }
+
+export async function putSummaryManual(articleId: string, summary: string): Promise<SummaryPanel> {
+  const r = await fetch(`${API_BASE}/api/articles/${encodeURIComponent(articleId)}/summary`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ summary }),
+  });
+  if (!r.ok) throw new Error(String(r.status));
+  return parseJson<SummaryPanel>(r);
+}
+
+export async function deleteSummary(articleId: string): Promise<void> {
+  const r = await fetch(`${API_BASE}/api/articles/${encodeURIComponent(articleId)}/summary`, {
+    method: "DELETE",
+  });
+  if (!r.ok) throw new Error(String(r.status));
+}
