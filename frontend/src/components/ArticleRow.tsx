@@ -22,6 +22,7 @@ type Props = {
   article: Article;
   view: string;
   pollingSummarizeId: string | null;
+  bulkCurrentId?: string | null;
   onSummarizePollingDone: () => void;
   onMutate: (message?: string) => void;
   onRequestResummarize: (articleId: string) => void;
@@ -64,12 +65,14 @@ export function ArticleRow({
   article,
   view,
   pollingSummarizeId,
+  bulkCurrentId,
   onSummarizePollingDone,
   onMutate,
   onRequestResummarize,
 }: Props) {
   const id = article.id;
   const disabled = Boolean(article.x_summarize_disabled);
+  const isBulkProcessing = bulkCurrentId === id;
   const displayTitle = (article.title_ja as string | null | undefined) || article.title || "";
 
   const [summaryPanel, setSummaryPanel] = useState<SummaryPanel | null>(null);
@@ -90,6 +93,14 @@ export function ArticleRow({
         const st = await getSummarizeStatus(id);
         if (st.job?.status === "running") {
           setProgressLog(st.job.log ?? []);
+          setSummarizeError(null);
+          return;
+        }
+        if (st.job?.status === "queued") {
+          const pos = st.job.queue_position ?? 0;
+          const waitLabel =
+            pos === 0 ? "次にこの記事を処理します" : `キューで待機中（先に ${pos} 件）`;
+          setProgressLog([`[${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}] ${waitLabel}`]);
           setSummarizeError(null);
           return;
         }
@@ -168,6 +179,10 @@ export function ArticleRow({
       if (r.outcome === "started") {
         setProgressLog(r.job.log ?? []);
         setLocalPolling(true);
+      } else if (r.outcome === "queued") {
+        onMutate("キューに追加されました");
+        setProgressLog([]);
+        setLocalPolling(true);
       } else {
         setSummaryPanel(r.panel);
         setSummarizeError(r.panel.error);
@@ -183,6 +198,10 @@ export function ArticleRow({
       const r = await postSummarizeWithText(id, text);
       if (r.outcome === "started") {
         setProgressLog(r.job.log ?? []);
+        setLocalPolling(true);
+      } else if (r.outcome === "queued") {
+        onMutate("キューに追加されました");
+        setProgressLog([]);
         setLocalPolling(true);
       } else {
         setSummaryPanel(r.panel);
@@ -288,8 +307,8 @@ export function ArticleRow({
           </div>
         </div>
 
-        {/* 下段: 要約操作ボタン (active ビューのみ) */}
-        {view === "active" ? (
+        {/* 下段: 要約操作ボタン */}
+        {view === "active" || view === "archived" ? (
           <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 flex flex-wrap gap-2 items-center justify-end text-sm sm:text-xs">
             {hasSummary && summaryOpen ? (
               <>
@@ -336,10 +355,10 @@ export function ArticleRow({
                   <button
                     type="button"
                     className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded inline-flex items-center gap-1.5 disabled:opacity-70"
-                    disabled={progressLog !== null}
+                    disabled={progressLog !== null || isBulkProcessing}
                     onClick={() => void startSummarize()}
                   >
-                    {progressLog !== null ? (
+                    {progressLog !== null || isBulkProcessing ? (
                       <>
                         <span className="summary-spinner" aria-hidden="true" />
                         生成中...
@@ -349,14 +368,16 @@ export function ArticleRow({
                     )}
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded disabled:opacity-70"
-                  disabled={progressLog !== null}
-                  onClick={() => setPasteModalOpen(true)}
-                >
-                  本文から要約
-                </button>
+                {disabled ? (
+                  <button
+                    type="button"
+                    disabled={progressLog !== null}
+                    className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded disabled:opacity-70"
+                    onClick={() => setPasteModalOpen(true)}
+                  >
+                    本文から要約
+                  </button>
+                ) : null}
               </>
             )}
           </div>

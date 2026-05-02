@@ -37,6 +37,10 @@ export type SummarizeJob = {
   log: string[];
   article: Article | null;
   error: string | null;
+  /** キュー待ちのとき 0 始まり（先頭が次に実行） */
+  queue_position?: number;
+  started_at?: string | null;
+  finished_at?: string | null;
 };
 
 export type Bootstrap = {
@@ -49,6 +53,7 @@ export type Bootstrap = {
   view: string;
   q: string;
   sync: SyncSnapshot;
+  unsummarized_count: number;
 };
 
 export type ArticlesPage = {
@@ -167,9 +172,22 @@ export async function postSummaryClose(articleId: string): Promise<SummaryPanel>
   return parseJson<SummaryPanel>(r);
 }
 
+export type QueueSnapshot = {
+  running: boolean;
+  /** 一括要約バッチの件数ベースの進捗表示に使う */
+  bulk_active: boolean;
+  current_id: string | null;
+  current_title: string | null;
+  pending: number;
+  total: number;
+  done: number;
+  unsummarized_count?: number;
+};
+
 export type SummarizePostResult =
   | { outcome: "started"; article: Article; job: SummarizeJob }
-  | { outcome: "busy" | "config_error" | "start_failed"; panel: SummaryPanel };
+  | { outcome: "config_error" | "start_failed"; panel: SummaryPanel }
+  | { outcome: "queued"; panel: SummaryPanel; queue: QueueSnapshot };
 
 export async function postSummarize(articleId: string): Promise<SummarizePostResult> {
   const r = await fetch(`${API_BASE}/api/articles/${encodeURIComponent(articleId)}/summarize`, {
@@ -222,4 +240,33 @@ export async function deleteSummary(articleId: string): Promise<void> {
     method: "DELETE",
   });
   if (!r.ok) throw new Error(String(r.status));
+}
+
+export type SummarizeAllResult = {
+  outcome: "started" | "nothing_to_do" | "skipped";
+  count: number;
+  queue: QueueSnapshot;
+};
+
+export type SummarizeQueueCancelResult = {
+  cancelled: number;
+  queue: QueueSnapshot;
+};
+
+export async function postSummarizeAll(): Promise<SummarizeAllResult> {
+  const r = await fetch(`${API_BASE}/api/summarize-all`, { method: "POST" });
+  if (!r.ok) throw new Error(String(r.status));
+  return parseJson<SummarizeAllResult>(r);
+}
+
+export async function getSummarizeQueue(): Promise<QueueSnapshot> {
+  const r = await fetch(`${API_BASE}/api/summarize-queue`);
+  if (!r.ok) throw new Error(String(r.status));
+  return parseJson<QueueSnapshot>(r);
+}
+
+export async function postSummarizeQueueCancel(): Promise<SummarizeQueueCancelResult> {
+  const r = await fetch(`${API_BASE}/api/summarize-queue/cancel`, { method: "POST" });
+  if (!r.ok) throw new Error(String(r.status));
+  return parseJson<SummarizeQueueCancelResult>(r);
 }

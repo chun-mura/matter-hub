@@ -1,3 +1,4 @@
+import threading
 import time
 
 import pytest
@@ -410,6 +411,64 @@ def test_api_post_article_summarize_success(tmp_path, monkeypatch):
     assert row["summary_model"] == "gemma3:4b"
     assert row["summary_source_url"] == "https://e.com/a1"
     db.close()
+
+
+def test_api_post_second_summarize_while_first_running_returns_queued(tmp_path, monkeypatch):
+    db_path = tmp_path / "web_queue.db"
+    monkeypatch.setenv("MATTER_HUB_DB", str(db_path))
+    db = Database(db_path)
+    for aid, title in (("a1", "A1"), ("a2", "A2")):
+        db.upsert_article({
+            "id": aid,
+            "title": title,
+            "url": f"https://e.com/{aid}",
+            "author": None,
+            "publisher": None,
+            "published_date": None,
+            "note": "fallback",
+            "library_state": 0,
+        })
+    db.close()
+
+    gate = threading.Event()
+
+    def slow_summarize(*_args, **_kwargs):
+        gate.set()
+        time.sleep(0.35)
+        return "要約"
+
+    monkeypatch.setattr("matter_hub.webapp.summarize_runner.ensure_ollama_noninteractive", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        "matter_hub.webapp.summarize_runner.fetch_article_content_text", lambda *_args, **_kwargs: "本文"
+    )
+    monkeypatch.setattr(
+        "matter_hub.webapp.summarize_runner.summarize_article_ollama", slow_summarize
+    )
+
+    c = TestClient(create_app())
+    r1 = c.post("/api/articles/a1/summarize")
+    assert r1.status_code == 200
+    assert r1.json()["outcome"] == "started"
+    assert gate.wait(timeout=2.0)
+
+    r2 = c.post("/api/articles/a2/summarize")
+    assert r2.status_code == 200
+    body = r2.json()
+    assert body["outcome"] == "queued"
+    assert body["queue"]["pending"] >= 1
+    assert body["queue"]["bulk_active"] is False
+
+    st = c.get("/api/articles/a2/summarize/status").json()
+    assert st["job"] is not None
+    assert st["job"]["status"] == "queued"
+    assert st["job"].get("queue_position") == 0
+
+    # グローバル SummarizeRunner を次のテスト用に空にする
+    for _ in range(250):
+        st2 = c.get("/api/articles/a2/summarize/status").json()
+        if st2.get("summary_panel") and st2["summary_panel"]["article"].get("summary") == "要約":
+            break
+        time.sleep(0.02)
 
 
 def test_api_post_article_resummarize_overwrites_existing(tmp_path, monkeypatch):

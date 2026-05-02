@@ -105,6 +105,7 @@ def api_bootstrap(
             "view": view,
             "q": q,
             "sync": sync_runner.snapshot(),
+            "unsummarized_count": _unsummarized_count(),
         }
     )
 
@@ -298,15 +299,12 @@ def api_summarize_article(article_id: str) -> JSONResponse:
         )
 
     outcome = summarize_runner.start(article_id)
-    if outcome == "busy":
+    if outcome == "queued":
         return _json(
             {
-                "outcome": "busy",
-                "panel": _summary_panel(
-                    article,
-                    error="別の記事の要約が実行中です。完了してから再度お試しください。",
-                    summary_open=False,
-                ),
+                "outcome": "queued",
+                "panel": _summary_panel(article, error=None, summary_open=False),
+                "queue": summarize_runner.queue_snapshot(),
             }
         )
 
@@ -344,15 +342,12 @@ def api_summarize_with_text(article_id: str, body: SummarizeWithTextBody) -> JSO
         db.close()
 
     outcome = summarize_runner.start_with_text(article_id, content)
-    if outcome == "busy":
+    if outcome == "queued":
         return _json(
             {
-                "outcome": "busy",
-                "panel": _summary_panel(
-                    article,
-                    error="別の記事の要約が実行中です。完了してから再度お試しください。",
-                    summary_open=False,
-                ),
+                "outcome": "queued",
+                "panel": _summary_panel(article, error=None, summary_open=False),
+                "queue": summarize_runner.queue_snapshot(),
             }
         )
 
@@ -379,7 +374,7 @@ def _summarize_status_payload(article_id: str) -> dict:
     if snap is None:
         return {"job": None, "summary_panel": None}
 
-    if snap["status"] == "running":
+    if snap["status"] in ("running", "queued"):
         return {"job": snap, "summary_panel": None}
 
     art = snap["article"] if snap["article"] is not None else None
@@ -402,3 +397,47 @@ def _summarize_status_payload(article_id: str) -> dict:
 @router.get("/articles/{article_id}/summarize/status")
 def api_summarize_article_status(article_id: str) -> JSONResponse:
     return _json(_summarize_status_payload(article_id))
+
+
+@router.post("/summarize-all")
+def api_summarize_all() -> JSONResponse:
+    db = web_db()
+    try:
+        articles = db.articles_without_summary(view="active")
+    finally:
+        db.close()
+
+    ids = [
+        a["id"] for a in articles
+        if not x_summarize_button_disabled_without_bearer(a)
+    ]
+
+    if not ids:
+        return _json({"outcome": "nothing_to_do", "count": 0, "queue": summarize_runner.queue_snapshot()})
+
+    count = summarize_runner.start_bulk(ids)
+    if count == 0:
+        return _json({"outcome": "skipped", "count": 0, "queue": summarize_runner.queue_snapshot()})
+    return _json({"outcome": "started", "count": count, "queue": summarize_runner.queue_snapshot()})
+
+
+def _unsummarized_count() -> int:
+    db = web_db()
+    try:
+        articles = db.articles_without_summary(view="active")
+        return sum(1 for a in articles if not x_summarize_button_disabled_without_bearer(a))
+    finally:
+        db.close()
+
+
+@router.get("/summarize-queue")
+def api_summarize_queue() -> JSONResponse:
+    snap = summarize_runner.queue_snapshot()
+    snap["unsummarized_count"] = _unsummarized_count()
+    return _json(snap)
+
+
+@router.post("/summarize-queue/cancel")
+def api_summarize_queue_cancel() -> JSONResponse:
+    cancelled = summarize_runner.cancel_bulk()
+    return _json({"cancelled": cancelled, "queue": summarize_runner.queue_snapshot()})

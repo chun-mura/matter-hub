@@ -8,6 +8,7 @@ import {
   type TagCount,
 } from "./api";
 import { ArticleRow } from "./components/ArticleRow";
+import { BulkSummarizePanel } from "./components/BulkSummarizePanel";
 import { ResummarizeModal } from "./components/ResummarizeModal";
 import { SyncPanel } from "./components/SyncPanel";
 import { Toast } from "./components/ui/Toast";
@@ -64,6 +65,7 @@ export default function App() {
   const [tags, setTags] = useState<TagCount[]>([]);
   const [sync, setSync] = useState<Bootstrap["sync"] | null>(null);
   const [total, setTotal] = useState(0);
+  const [unsummarizedCount, setUnsummarizedCount] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -76,6 +78,7 @@ export default function App() {
   const [resummarizeModalOpen, setResummarizeModalOpen] = useState(false);
   const [resummarizeId, setResummarizeId] = useState<string | null>(null);
   const [pollingSummarizeId, setPollingSummarizeId] = useState<string | null>(null);
+  const [bulkCurrentId, setBulkCurrentId] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
@@ -98,6 +101,7 @@ export default function App() {
       setTotal(b.total);
       setPage(b.page);
       setHasMore(b.has_more);
+      setUnsummarizedCount(b.unsummarized_count);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "load failed");
     } finally {
@@ -106,6 +110,14 @@ export default function App() {
   }, [view, qApplied, tagsKey]);
 
   const onSyncFinished = useCallback(() => {
+    void loadBootstrap({ silent: true });
+  }, [loadBootstrap]);
+
+  const onBulkSummarizeDone = useCallback(() => {
+    void loadBootstrap({ silent: true });
+  }, [loadBootstrap]);
+
+  const onBulkSummarizeProgress = useCallback(() => {
     void loadBootstrap({ silent: true });
   }, [loadBootstrap]);
 
@@ -211,6 +223,9 @@ export default function App() {
       const r = await postSummarize(resummarizeId);
       if (r.outcome === "started") {
         setPollingSummarizeId(resummarizeId);
+      } else if (r.outcome === "queued") {
+        showToast("キューに追加されました");
+        setPollingSummarizeId(resummarizeId);
       } else {
         setErr(r.panel.error || "要約を開始できませんでした");
       }
@@ -235,10 +250,18 @@ export default function App() {
           <NavButton active={view === "archived"} onClick={() => { setView("archived"); setPage(1); }}>アーカイブ</NavButton>
           <NavButton active={view === "trend"} onClick={() => { setView("trend"); setPage(1); }}>トレンド</NavButton>
           <NavButton active={view === "trash"} onClick={() => { setView("trash"); setPage(1); }}>ゴミ箱</NavButton>
-          <span className="text-gray-500 dark:text-gray-400 text-sm">{total} 件</span>
+          <span className="text-gray-500 dark:text-gray-400 text-sm">
+            {total} 件
+            {unsummarizedCount !== null && unsummarizedCount > 0 ? (
+              <span className="ml-1 text-amber-600 dark:text-amber-400">
+                (未要約 {unsummarizedCount})
+              </span>
+            ) : null}
+          </span>
         </div>
-        <div className="w-full">
+        <div className="w-full flex flex-col gap-2">
           {sync ? <SyncPanel initial={sync} onSyncFinished={onSyncFinished} /> : null}
+          <BulkSummarizePanel onDone={onBulkSummarizeDone} onProgress={onBulkSummarizeProgress} onCurrentIdChange={setBulkCurrentId} />
         </div>
       </header>
 
@@ -305,6 +328,7 @@ export default function App() {
                   article={a}
                   view={view}
                   pollingSummarizeId={pollingSummarizeId}
+                  bulkCurrentId={bulkCurrentId}
                   onSummarizePollingDone={clearPolling}
                   onMutate={handleMutate}
                   onRequestResummarize={onRequestResummarize}
