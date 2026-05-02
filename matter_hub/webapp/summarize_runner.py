@@ -55,6 +55,24 @@ class SummarizeRunner:
                 "error": self._error,
             }
 
+    def _init_job(self, article_id: str) -> bool:
+        """ジョブ状態を初期化。busy なら False を返す。"""
+        with self._lock:
+            if self._status == "running":
+                return False
+            self._status = "running"
+            self._article_id = article_id
+            self._article = None
+            self._log.clear()
+            self._started_at = datetime.now()
+            self._finished_at = None
+            self._error = None
+        return True
+
+    def _is_same_running(self, article_id: str) -> bool:
+        with self._lock:
+            return self._status == "running" and self._article_id == article_id
+
     def start(self, article_id: str) -> Literal["started", "busy", "same"]:
         """
         Start summarization in a background thread.
@@ -65,13 +83,9 @@ class SummarizeRunner:
                 if self._article_id == article_id:
                     return "same"
                 return "busy"
-            self._status = "running"
-            self._article_id = article_id
-            self._article = None
-            self._log.clear()
-            self._started_at = datetime.now()
-            self._finished_at = None
-            self._error = None
+
+        if not self._init_job(article_id):
+            return "busy"
 
         def _append(msg: str, level: str = "info") -> None:
             line = _format_log_line(msg, level)
@@ -131,6 +145,91 @@ class SummarizeRunner:
                     _append("要約を生成しています（モデル処理中）…")
                     summary = summarize_article_ollama(
                         article, extracted, model="gemma3:4b", log=_append
+                    )
+                    if not summary:
+                        msg = "要約の生成に失敗しました"
+                        _append(msg, level="error")
+                        with self._lock:
+                            self._error = msg
+                            self._status = "error"
+                        return
+
+                    db.update_article_summary(
+                        article_id=article_id,
+                        summary=summary,
+                        model="gemma3:4b",
+                        source_url=article["url"],
+                    )
+                    row_done = db.conn.execute("SELECT * FROM articles WHERE id = ?", (article_id,)).fetchone()
+                    article = dict(row_done) if row_done else article
+                    with self._lock:
+                        self._article = article
+                        self._status = "ok"
+                    _append("要約を保存しました")
+                finally:
+                    db.close()
+            except Exception as e:
+                _append(f"エラー: {e}", level="error")
+                with self._lock:
+                    self._error = str(e)
+                    self._status = "error"
+            finally:
+                with self._lock:
+                    self._finished_at = datetime.now()
+
+        self._thread = threading.Thread(target=_worker, daemon=True)
+        self._thread.start()
+        return "started"
+
+    def start_with_text(self, article_id: str, content_text: str) -> Literal["started", "busy", "same"]:
+        """
+        本文テキストを直接渡して要約を開始。URL フェッチ・bearer token 不要。
+        X など直接取得できないページの記事に使用する。
+        """
+        with self._lock:
+            if self._status == "running":
+                if self._article_id == article_id:
+                    return "same"
+                return "busy"
+
+        if not self._init_job(article_id):
+            return "busy"
+
+        def _append(msg: str, level: str = "info") -> None:
+            line = _format_log_line(msg, level)
+            with self._lock:
+                self._log.append(line)
+
+        def _worker() -> None:
+            db_path = get_db_path()
+            try:
+                db = Database(db_path)
+                try:
+                    row = db.conn.execute("SELECT * FROM articles WHERE id = ?", (article_id,)).fetchone()
+                    if not row:
+                        _append("記事が見つかりません", level="error")
+                        with self._lock:
+                            self._article = {"id": article_id}
+                            self._error = "記事が見つかりません"
+                            self._status = "error"
+                        return
+                    article = dict(row)
+                    with self._lock:
+                        self._article = article
+
+                    _append(f"貼り付けられた本文を使用します（{len(content_text)} 文字）")
+                    _append("Ollama の接続を確認しています…")
+                    if not ensure_ollama_noninteractive(log=_append, auto_start=True):
+                        msg = "Ollamaに接続できません"
+                        _append(msg, level="error")
+                        with self._lock:
+                            self._error = msg
+                            self._status = "error"
+                        return
+
+                    _append("要約を生成しています（モデル処理中）…")
+                    summary = summarize_article_ollama(
+                        article, content_text, model="gemma3:4b", log=_append
                     )
                     if not summary:
                         msg = "要約の生成に失敗しました"

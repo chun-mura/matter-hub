@@ -27,6 +27,10 @@ class SummaryBody(BaseModel):
     summary: str
 
 
+class SummarizeWithTextBody(BaseModel):
+    content: str
+
+
 def _cors_origins() -> list[str]:
     raw = os.environ.get(
         "MATTER_HUB_CORS_ORIGINS",
@@ -294,6 +298,52 @@ def api_summarize_article(article_id: str) -> JSONResponse:
         )
 
     outcome = summarize_runner.start(article_id)
+    if outcome == "busy":
+        return _json(
+            {
+                "outcome": "busy",
+                "panel": _summary_panel(
+                    article,
+                    error="別の記事の要約が実行中です。完了してから再度お試しください。",
+                    summary_open=False,
+                ),
+            }
+        )
+
+    snap = summarize_runner.snapshot_for(article_id)
+    if not snap:
+        return _json(
+            {
+                "outcome": "start_failed",
+                "panel": _summary_panel(article, error="要約の開始に失敗しました", summary_open=False),
+            }
+        )
+
+    return _json(
+        {
+            "outcome": "started",
+            "article": article,
+            "job": snap,
+        }
+    )
+
+
+@router.post("/articles/{article_id}/summarize-with-text")
+def api_summarize_with_text(article_id: str, body: SummarizeWithTextBody) -> JSONResponse:
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="content は空にできません")
+
+    db = web_db()
+    try:
+        row = db.conn.execute("SELECT * FROM articles WHERE id = ?", (article_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404)
+        article = dict(row)
+    finally:
+        db.close()
+
+    outcome = summarize_runner.start_with_text(article_id, content)
     if outcome == "busy":
         return _json(
             {

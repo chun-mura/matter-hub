@@ -191,6 +191,22 @@ export async function getSummarizeStatus(articleId: string): Promise<SummarizeSt
   return parseJson<SummarizeStatusResult>(r);
 }
 
+export async function postSummarizeWithText(
+  articleId: string,
+  content: string,
+): Promise<SummarizePostResult> {
+  const r = await fetch(
+    `${API_BASE}/api/articles/${encodeURIComponent(articleId)}/summarize-with-text`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    },
+  );
+  if (!r.ok) throw new Error(String(r.status));
+  return parseJson<SummarizePostResult>(r);
+}
+
 export async function putSummaryManual(articleId: string, summary: string): Promise<SummaryPanel> {
   const r = await fetch(`${API_BASE}/api/articles/${encodeURIComponent(articleId)}/summary`, {
     method: "PUT",

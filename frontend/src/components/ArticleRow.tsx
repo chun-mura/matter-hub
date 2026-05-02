@@ -7,6 +7,7 @@ import {
   postDelete,
   postRestore,
   postSummarize,
+  postSummarizeWithText,
   postSummaryClose,
   postUnarchive,
   putSummaryManual,
@@ -14,6 +15,7 @@ import {
   type SummaryPanel,
 } from "../api";
 import { useSwipeRow } from "../hooks/useSwipeRow";
+import { SummarizeWithTextModal } from "./SummarizeWithTextModal";
 import { SummaryEditModal } from "./SummaryEditModal";
 import { ConfirmModal } from "./ui/ConfirmModal";
 
@@ -78,6 +80,7 @@ export function ArticleRow({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [summaryDeleteConfirmOpen, setSummaryDeleteConfirmOpen] = useState(false);
+  const [pasteModalOpen, setPasteModalOpen] = useState(false);
 
   const pollingActive = localPolling || pollingSummarizeId === id;
 
@@ -179,6 +182,22 @@ export function ArticleRow({
     const p = await putSummaryManual(id, text);
     setSummaryPanel(p);
     onMutate();
+  };
+
+  const handleSubmitWithText = async (text: string) => {
+    setSummarizeError(null);
+    try {
+      const r = await postSummarizeWithText(id, text);
+      if (r.outcome === "started") {
+        setProgressLog(r.job.log ?? []);
+        setLocalPolling(true);
+      } else {
+        setSummaryPanel(r.panel);
+        setSummarizeError(r.panel.error);
+      }
+    } catch (e) {
+      setSummarizeError(e instanceof Error ? e.message : "error");
+    }
   };
 
   const handleDeleteSummary = async () => {
@@ -349,6 +368,14 @@ export function ArticleRow({
                 )}
                 <button
                   type="button"
+                  className="px-3 py-1.5 bg-action-primary hover:bg-action-primary-hover text-white rounded disabled:opacity-70"
+                  disabled={progressLog !== null}
+                  onClick={() => setPasteModalOpen(true)}
+                >
+                  本文から要約
+                </button>
+                <button
+                  type="button"
                   className="px-3 py-1.5 bg-action-neutral hover:bg-action-neutral-hover text-white rounded disabled:opacity-70"
                   disabled={progressLog !== null}
                   onClick={() => setEditModalOpen(true)}
@@ -435,6 +462,11 @@ export function ArticleRow({
         initialValue={String(summaryPanel?.article?.summary ?? article.summary ?? "")}
         onClose={() => setEditModalOpen(false)}
         onSave={handleSaveSummary}
+      />
+      <SummarizeWithTextModal
+        open={pasteModalOpen}
+        onClose={() => setPasteModalOpen(false)}
+        onSubmit={handleSubmitWithText}
       />
     </li>
   );
